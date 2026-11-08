@@ -1,0 +1,9 @@
+# Dependencias del Proyecto DSP Comunicaciones I - UTP
+# Entorno científico y procesamiento de señales
+
+numpy>=1.24.0
+scipy>=1.10.0
+matplotlib>=3.7.0
+
+# Opcional para captura de micrófono en tiempo real si el equipo cuenta con hardware de audio:
+sounddevice>=0.4.6; sys_platform != 'none'
