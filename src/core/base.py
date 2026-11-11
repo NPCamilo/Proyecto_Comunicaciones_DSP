@@ -133,6 +133,26 @@ class ModulatedSignal:
     def time_vector(self) -> np.ndarray:
         return np.linspace(0.0, self.duration, len(self.samples), endpoint=False)
 
+    def to_audio_signal(self) -> "AudioSignal":
+        """
+        Convierte la señal modulada pasabanda a un contenedor AudioSignal normalizado
+        para permitir su reproducción directa en altavoces o guardado en archivo WAV.
+        """
+        peak = float(np.max(np.abs(self.samples))) or 1.0
+        norm_samples = (self.samples / peak * 0.95).astype(np.float32)
+        return AudioSignal(
+            samples=norm_samples,
+            sample_rate=self.sampling_rate,
+            bit_depth=16,
+            duration=self.duration,
+            metadata={
+                "source_modulation": self.modulation_type,
+                "carrier_freq": self.carrier_freq,
+                "is_digital": self.is_digital,
+                **self.metadata
+            }
+        )
+
 
 @dataclass
 class DemodulatedResult:

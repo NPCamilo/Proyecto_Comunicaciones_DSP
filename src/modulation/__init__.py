@@ -6,7 +6,8 @@ from .analog_digital_stubs import (
     FMModulator,
     DigitalShiftKeyingModulator,
     plot_modulated_signal,
-    plot_modulation_spectrum_translation
+    plot_modulation_spectrum_translation,
+    play_modulated_audio
 )
 
 __all__ = [
@@ -14,5 +15,6 @@ __all__ = [
     "FMModulator",
     "DigitalShiftKeyingModulator",
     "plot_modulated_signal",
-    "plot_modulation_spectrum_translation"
+    "plot_modulation_spectrum_translation",
+    "play_modulated_audio"
 ]

@@ -13,14 +13,15 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 
 from src.core.base import AudioSignal, DigitalStream, ModulatedSignal
-from src.core.audio_io import generate_synthetic_speech_phrase
+from src.core.audio_io import generate_synthetic_speech_phrase, save_wav, load_wav, play_audio
 from src.core.quantization import quantize_signal
 from src.modulation.analog_digital_stubs import (
     AMModulator,
     FMModulator,
     DigitalShiftKeyingModulator,
     plot_modulated_signal,
-    plot_modulation_spectrum_translation
+    plot_modulation_spectrum_translation,
+    play_modulated_audio
 )
 
 
@@ -431,6 +432,53 @@ class TestModulationPlotting(unittest.TestCase):
             self.assertEqual(len(fig.axes), 2)
             self.assertTrue(os.path.exists(save_path))
             self.assertGreater(os.path.getsize(save_path), 1000)
+
+
+class TestModulationAudioOutput(unittest.TestCase):
+
+    def setUp(self):
+        self.sample_rate = 16000
+        self.duration = 1.0
+        self.samples = generate_synthetic_speech_phrase(duration=self.duration, sample_rate=self.sample_rate)
+        self.audio = AudioSignal(
+            samples=self.samples,
+            sample_rate=self.sample_rate,
+            bit_depth=16,
+            duration=self.duration
+        )
+        self.modulator = AMModulator(carrier_freq=2500.0, mod_index=0.8)
+        self.modulated = self.modulator.modulate(self.audio)
+
+    def test_to_audio_signal_conversion(self):
+        """Verifica la conversión de ModulatedSignal a AudioSignal."""
+        audio_sig = self.modulated.to_audio_signal()
+        self.assertIsInstance(audio_sig, AudioSignal)
+        self.assertEqual(audio_sig.sample_rate, self.modulated.sampling_rate)
+        self.assertAlmostEqual(audio_sig.duration, self.modulated.duration, places=2)
+        self.assertLessEqual(np.max(np.abs(audio_sig.samples)), 1.0)
+        self.assertEqual(audio_sig.metadata["source_modulation"], self.modulated.modulation_type)
+
+    def test_save_and_reload_modulated_wav(self):
+        """Verifica que la señal modulada pueda exportarse a WAV y cargarse con fidelidad."""
+        audio_sig = self.modulated.to_audio_signal()
+        with tempfile.TemporaryDirectory() as tmpdir:
+            wav_path = os.path.join(tmpdir, "modulated_am.wav")
+            out_file = save_wav(wav_path, audio_sig, bit_depth=16)
+            self.assertTrue(os.path.exists(out_file))
+
+            reloaded = load_wav(out_file)
+            self.assertEqual(reloaded.sample_rate, audio_sig.sample_rate)
+            self.assertEqual(reloaded.num_samples, audio_sig.num_samples)
+
+    def test_play_modulated_audio_interface(self):
+        """Verifica la compatibilidad de play_modulated_audio y play_audio con ModulatedSignal."""
+        # Se prueba en modo asíncrono o comprobando que no lance excepción
+        result = play_modulated_audio(self.modulated, async_play=True)
+        self.assertIsInstance(result, bool)
+
+        # También directo vía play_audio
+        result_direct = play_audio(self.modulated, async_play=True)
+        self.assertIsInstance(result_direct, bool)
 
 
 if __name__ == '__main__':

@@ -993,3 +993,25 @@ def plot_modulation_spectrum_translation(
         plt.show()
 
     return fig
+
+
+def play_modulated_audio(modulated: ModulatedSignal, async_play: bool = False) -> bool:
+    """
+    Permite escuchar auditivamente la señal modulada pasabanda a través de los altavoces
+    del equipo (Punto 4 del proyecto).
+    
+    Recomendación psicoacústica:
+      Utilizar frecuencias de portadora dentro del espectro audible humano (fc = 1500 a 4000 Hz)
+      para poder percibir claramente el tono de portadora y las variaciones tímbricas producidas
+      por la modulación de amplitud, frecuencia o clave digital.
+      
+    Args:
+        modulated (ModulatedSignal): Señal pasabanda a reproducir.
+        async_play (bool): Si es True, reproduce en segundo plano; si es False, espera
+                           hasta que finalice la reproducción.
+                           
+    Returns:
+        bool: True si la reproducción se inició/completó con éxito.
+    """
+    from ..core.audio_io import play_audio
+    return play_audio(modulated, async_play=async_play)
