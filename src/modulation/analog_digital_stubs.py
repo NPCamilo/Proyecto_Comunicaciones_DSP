@@ -9,54 +9,239 @@ ESTE MÓDULO CORRESPONDE AL PUNTO 4 DEL PROYECTO:
     - Permitir escuchar el resultado de la señal modulada."
 """
 
+import warnings
+from typing import Optional, Tuple, Dict, Any
 import numpy as np
+import scipy.signal as signal_proc
 import matplotlib.pyplot as plt
-from typing import Optional, Tuple
 from ..core.base import AudioSignal, DigitalStream, ModulatedSignal, BaseModulator
 
 
 class AMModulator(BaseModulator):
     """
-    Modulador de Amplitud Analógica (AM Convencional / DSB-FC o DSB-SC).
-    Ecuación DSB-FC: s(t) = [A_c + m(t)] * cos(2*pi*f_c*t)
+    Modulador de Amplitud Analógica (AM Convencional / DSB-FC y DSB-SC).
+    
+    Ecuación General DSB-FC (Doble Banda Lateral con Portadora Completa):
+        s_AM(t) = [A_c + m(t)] * cos(2 * pi * f_c * t)
+        
     Donde:
-      - m(t) es la señal de audio banda base normalizada
-      - A_c es la amplitud de portadora (índice de modulación mu = max|m(t)| / A_c)
-      - f_c es la frecuencia portadora (e.g., 2000 Hz a 5000 Hz para audio audible)
+        - m(t) es la señal de mensaje (audio en banda base normalizado).
+        - A_c es la amplitud de la portadora.
+        - f_c es la frecuencia portadora (Hz).
+        - mu = max|m(t)| / A_c es el índice de modulación (profundidad de modulación).
+        
+    Criterio de No Sobremodulación:
+        Para evitar distorsión de la envolvente e inversión de fase:
+        mu = max|m(t)| / A_c <= 1.0 (o mod_index <= 1.0)
     """
 
-    def __init__(self, carrier_freq: float = 3000.0, mod_index: float = 0.8):
-        self.carrier_freq = carrier_freq
-        self.mod_index = mod_index
+    def __init__(
+        self,
+        carrier_freq: float = 3000.0,
+        mod_index: Optional[float] = 0.8,
+        carrier_amp: Optional[float] = None,
+        am_type: str = "DSB-FC",
+        target_sample_rate: Optional[int] = None,
+        normalize_output: bool = True
+    ):
+        """
+        Inicializa el modulador de amplitud AM.
+        
+        Args:
+            carrier_freq (float): Frecuencia de la portadora fc en Hz (default: 3000 Hz, audible).
+            mod_index (Optional[float]): Índice de modulación mu deseado (e.g., 0.8 para 80%).
+            carrier_amp (Optional[float]): Amplitud Ac explícita. Si se suministra, calcula mu = peak / Ac.
+            am_type (str): Tipo de AM: 'DSB-FC' (convencional con portadora) o 'DSB-SC' (portadora suprimida).
+            target_sample_rate (Optional[int]): Tasa de muestreo de simulación. Si es None, garantiza
+                                                fs_sim >= 4 * fc para prevenir aliasing numérico.
+            normalize_output (bool): Si es True, escala la señal resultante en [-1.0, 1.0] para
+                                     evitar saturación auditiva y compatibilidad DAC.
+        """
+        if carrier_freq <= 0:
+            raise ValueError(f"La frecuencia portadora carrier_freq debe ser > 0 (recibido: {carrier_freq}).")
+            
+        if mod_index is not None and mod_index <= 0:
+            raise ValueError(f"El índice de modulación mod_index debe ser > 0 (recibido: {mod_index}).")
+            
+        if carrier_amp is not None and carrier_amp <= 0:
+            raise ValueError(f"La amplitud de portadora carrier_amp debe ser > 0 (recibido: {carrier_amp}).")
+
+        if am_type.upper() not in ("DSB-FC", "DSB-SC"):
+            raise ValueError(f"Tipo am_type '{am_type}' no soportado. Use 'DSB-FC' o 'DSB-SC'.")
+
+        self.carrier_freq = float(carrier_freq)
+        self.mod_index = float(mod_index) if mod_index is not None else None
+        self.carrier_amp = float(carrier_amp) if carrier_amp is not None else None
+        self.am_type = am_type.upper()
+        self.target_sample_rate = target_sample_rate
+        self.normalize_output = normalize_output
+
+    def check_overmodulation(self, audio: AudioSignal) -> Tuple[bool, float, float]:
+        """
+        Evalúa si la combinación de la señal de mensaje y la configuración de portadora
+        generará sobremodulación (mu > 1.0).
+        
+        Args:
+            audio (AudioSignal): Señal de entrada.
+            
+        Returns:
+            Tuple[bool, float, float]: (is_overmodulated, mu_calculado, Ac_calculado)
+        """
+        peak_m = float(np.max(np.abs(audio.samples)))
+        if peak_m < 1e-9:
+            peak_m = 1.0
+
+        if self.carrier_amp is not None:
+            ac = self.carrier_amp
+            mu = peak_m / ac
+        elif self.mod_index is not None:
+            mu = self.mod_index
+            ac = peak_m / mu
+        else:
+            mu = 0.8
+            ac = peak_m / mu
+
+        is_over = bool(mu > 1.0001)
+        return is_over, float(mu), float(ac)
 
     def modulate(self, audio: AudioSignal, **kwargs) -> ModulatedSignal:
         """
-        Genera la señal modulada en AM.
-        Nota: Para evitar aliasing en la simulación numérica, la tasa de muestreo
-        de la señal de audio (e.g. 16 kHz) debe ser suficientemente mayor a 2*f_c.
+        Ejecuta la modulación de amplitud sobre la señal de audio banda base.
+        
+        Args:
+            audio (AudioSignal): Señal de entrada normalizada.
+            **kwargs: Parámetros opcionales para sobreescribir configuración de instancia:
+                      - 'carrier_freq': float
+                      - 'mod_index': float
+                      - 'carrier_amp': float
+                      - 'am_type': str ('DSB-FC' o 'DSB-SC')
+                      - 'target_sample_rate': int
+                      
+        Returns:
+            ModulatedSignal: Objeto con la señal pasabanda modulada, portadora y metadatos.
         """
-        fs = audio.sample_rate
-        if fs < 4 * self.carrier_freq:
-            # Sugerencia: re-muestrear si fs es bajo
-            pass
-        
-        t = audio.time_vector
+        if not isinstance(audio, AudioSignal):
+            raise TypeError(f"Se esperaba una instancia de AudioSignal, recibido: {type(audio)}")
+
+        fc = float(kwargs.get("carrier_freq", self.carrier_freq))
+        am_type = str(kwargs.get("am_type", self.am_type)).upper()
+        target_fs = kwargs.get("target_sample_rate", self.target_sample_rate)
+
         m = audio.samples
-        ac = 1.0 / self.mod_index
-        carrier = np.cos(2 * np.pi * self.carrier_freq * t)
-        
-        # Modulación AM convencional:
-        s_am = (ac + m) * carrier
-        # Normalizar para reproducción segura
-        s_am_norm = s_am / np.max(np.abs(s_am))
+        fs_orig = audio.sample_rate
+
+        # 1. Asegurar tasa de muestreo adecuada para evitar aliasing en portadora (fs >= 4 * fc)
+        min_required_fs = int(np.ceil(4 * fc))
+        if target_fs is not None:
+            fs_sim = int(target_fs)
+        elif fs_orig < min_required_fs:
+            fs_sim = max(min_required_fs, 32000)
+        else:
+            fs_sim = fs_orig
+
+        # Remuestrear si la simulación requiere mayor frecuencia
+        if fs_sim != fs_orig:
+            new_num_samples = int(round(len(m) * fs_sim / fs_orig))
+            m_sim = signal_proc.resample(m, new_num_samples).astype(np.float32)
+            t_sim = np.linspace(0.0, len(m) / fs_orig, new_num_samples, endpoint=False, dtype=np.float32)
+            resampled = True
+        else:
+            m_sim = m
+            t_sim = audio.time_vector
+            resampled = False
+
+        # 2. Análisis de amplitud pico y cálculo de Ac e índice mu
+        peak_m = float(np.max(np.abs(m_sim)))
+        if peak_m < 1e-9:
+            peak_m = 1.0  # Evitar división por cero en señales silenciosas
+
+        override_amp = kwargs.get("carrier_amp", self.carrier_amp)
+        override_idx = kwargs.get("mod_index", self.mod_index)
+
+        if override_amp is not None:
+            ac = float(override_amp)
+            mu = float(peak_m / ac)
+        elif override_idx is not None:
+            mu = float(override_idx)
+            ac = float(peak_m / mu)
+        else:
+            mu = 0.8
+            ac = float(peak_m / mu)
+
+        # 3. Verificación rigurosa del criterio de sobremodulación (mu <= 1.0)
+        is_overmodulated = bool(mu > 1.0001 and am_type == "DSB-FC")
+        if is_overmodulated:
+            warnings.warn(
+                f"[AMModulator] Alerta de Sobremodulación: mu = {mu:.3f} > 1.0 (Ac = {ac:.3f}, V_peak = {peak_m:.3f}). "
+                f"La envolvente [Ac + m(t)] cruzará por cero generando inversión de fase "
+                f"y distorsión no lineal al demodular por envolvente.",
+                UserWarning,
+                stacklevel=2
+            )
+
+        # 4. Generación de la onda portadora y modulación
+        carrier = np.cos(2 * np.pi * fc * t_sim).astype(np.float32)
+
+        if am_type == "DSB-FC":
+            # AM Convencional: s(t) = [Ac + m(t)] * cos(2*pi*fc*t)
+            envelope = ac + m_sim
+            s_am = envelope * carrier
+            p_carrier = float(0.5 * (ac ** 2))
+            p_message = float(np.mean(m_sim ** 2))
+            p_sidebands = float(0.5 * p_message)
+            total_power = p_carrier + p_sidebands
+            efficiency = float((p_sidebands / total_power) * 100.0) if total_power > 0 else 0.0
+            env_min = float(np.min(envelope))
+            env_max = float(np.max(envelope))
+        else:
+            # AM DSB-SC (Portadora Suprimida): s(t) = m(t) * cos(2*pi*fc*t)
+            envelope = np.abs(m_sim)
+            s_am = m_sim * carrier
+            ac = 0.0
+            p_carrier = 0.0
+            p_sidebands = float(0.5 * np.mean(m_sim ** 2))
+            total_power = p_sidebands
+            efficiency = 100.0
+            mu = float("inf")
+            is_overmodulated = False
+            env_min = float(np.min(m_sim))
+            env_max = float(np.max(m_sim))
+
+        # 5. Normalización para reproducción y compatibilidad de rango
+        if self.normalize_output:
+            max_val = float(np.max(np.abs(s_am)))
+            if max_val > 1e-9:
+                s_am_out = (s_am / max_val * 0.95).astype(np.float32)
+            else:
+                s_am_out = s_am.astype(np.float32)
+        else:
+            s_am_out = s_am.astype(np.float32)
+
+        metadata: Dict[str, Any] = {
+            "am_type": f"AM-{am_type}",
+            "carrier_freq": fc,
+            "carrier_amplitude": ac,
+            "mod_index": mu,
+            "is_overmodulated": is_overmodulated,
+            "peak_message_amplitude": peak_m,
+            "envelope_min": env_min,
+            "envelope_max": env_max,
+            "efficiency_percent": efficiency,
+            "carrier_power": p_carrier,
+            "sideband_power": p_sidebands,
+            "total_power": total_power,
+            "resampled": resampled,
+            "original_sample_rate": fs_orig,
+            "simulation_sample_rate": fs_sim,
+        }
 
         return ModulatedSignal(
-            samples=s_am_norm.astype(np.float32),
-            carrier_freq=self.carrier_freq,
-            sampling_rate=fs,
-            modulation_type="AM-DSB-FC",
+            samples=s_am_out,
+            carrier_freq=fc,
+            sampling_rate=fs_sim,
+            modulation_type=f"AM-{am_type}",
             is_digital=False,
-            metadata={"mod_index": self.mod_index, "carrier_freq": self.carrier_freq}
+            metadata=metadata
         )
 
 
