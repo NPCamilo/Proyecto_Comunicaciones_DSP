@@ -7,9 +7,14 @@ import unittest
 import warnings
 import numpy as np
 
-from src.core.base import AudioSignal, ModulatedSignal
+from src.core.base import AudioSignal, DigitalStream, ModulatedSignal
 from src.core.audio_io import generate_synthetic_speech_phrase
-from src.modulation.analog_digital_stubs import AMModulator, FMModulator
+from src.core.quantization import quantize_signal
+from src.modulation.analog_digital_stubs import (
+    AMModulator,
+    FMModulator,
+    DigitalShiftKeyingModulator
+)
 
 
 class TestAMModulation(unittest.TestCase):
@@ -210,6 +215,133 @@ class TestFMModulation(unittest.TestCase):
 
         self.assertTrue(mod_sig.metadata["resampled"])
         self.assertGreaterEqual(mod_sig.sampling_rate, 4 * 3500.0)
+
+
+class TestDigitalModulation(unittest.TestCase):
+
+    def setUp(self):
+        self.sample_rate = 16000
+        self.duration = 1.0
+        self.samples = generate_synthetic_speech_phrase(duration=self.duration, sample_rate=self.sample_rate)
+        self.audio = AudioSignal(
+            samples=self.samples,
+            sample_rate=self.sample_rate,
+            bit_depth=16,
+            duration=self.duration
+        )
+        # DigitalStream real a 4 bits
+        self.stream = quantize_signal(self.audio, bits_per_sample=4)
+        self.short_bits = np.array([1, 0, 1, 1, 0, 0, 1, 0], dtype=np.uint8)
+
+    def test_digital_initialization_validations(self):
+        """Verifica validación de parámetros en DigitalShiftKeyingModulator."""
+        with self.assertRaises(ValueError):
+            DigitalShiftKeyingModulator(mod_type="UNKNOWN")
+        with self.assertRaises(ValueError):
+            DigitalShiftKeyingModulator(carrier_freq=0.0)
+        with self.assertRaises(ValueError):
+            DigitalShiftKeyingModulator(samples_per_symbol=1)
+        with self.assertRaises(ValueError):
+            DigitalShiftKeyingModulator(a1=0.0)
+        with self.assertRaises(ValueError):
+            DigitalShiftKeyingModulator(a0=-0.5)
+
+    def test_ask_ook_modulation(self):
+        """Verifica modulación ASK (OOK: A1=1.0, A0=0.0)."""
+        modulator = DigitalShiftKeyingModulator(
+            mod_type="ASK",
+            carrier_freq=2000.0,
+            samples_per_symbol=16,
+            a0=0.0,
+            a1=1.0
+        )
+        mod_sig = modulator.modulate(self.short_bits)
+
+        self.assertIsInstance(mod_sig, ModulatedSignal)
+        self.assertTrue(mod_sig.is_digital)
+        self.assertEqual(mod_sig.modulation_type, "Digital-ASK")
+        self.assertEqual(len(mod_sig.samples), len(self.short_bits) * 16)
+        
+        # En los intervalos de bit 0 (índices 16..32, 64..80, 80..96, 112..128),
+        # la amplitud debe ser prácticamente 0 en OOK
+        sps = 16
+        bit0_chunk = mod_sig.samples[1 * sps : 2 * sps]
+        self.assertAlmostEqual(float(np.max(np.abs(bit0_chunk))), 0.0, places=5)
+
+        # En intervalos de bit 1, debe haber oscilación de portadora
+        bit1_chunk = mod_sig.samples[0 * sps : 1 * sps]
+        self.assertGreater(float(np.max(np.abs(bit1_chunk))), 0.5)
+
+    def test_fsk_modulation(self):
+        """Verifica modulación FSK binaria (f1=2500 Hz para bit 1, f0=1500 Hz para bit 0)."""
+        modulator = DigitalShiftKeyingModulator(
+            mod_type="FSK",
+            carrier_freq=2000.0,
+            f0=1500.0,
+            f1=2500.0,
+            samples_per_symbol=32,
+            continuous_phase=True
+        )
+        mod_sig = modulator.modulate(self.short_bits)
+
+        self.assertTrue(mod_sig.is_digital)
+        self.assertEqual(mod_sig.modulation_type, "Digital-FSK")
+        self.assertEqual(mod_sig.metadata["f0_hz"], 1500.0)
+        self.assertEqual(mod_sig.metadata["f1_hz"], 2500.0)
+        self.assertTrue(mod_sig.metadata["continuous_phase"])
+
+        # La envolvente en FSK debe ser constante (|s(t)| > 0 en todo momento)
+        self.assertGreater(float(np.mean(mod_sig.samples ** 2)), 0.1)
+
+    def test_bpsk_modulation(self):
+        """Verifica modulación BPSK (inversión de fase de 180° entre bit 1 y bit 0)."""
+        sps = 32
+        modulator = DigitalShiftKeyingModulator(
+            mod_type="BPSK",
+            carrier_freq=2000.0,
+            samples_per_symbol=sps
+        )
+        bits_two = np.array([1, 0], dtype=np.uint8)
+        mod_sig = modulator.modulate(bits_two)
+
+        self.assertEqual(mod_sig.modulation_type, "Digital-BPSK")
+        
+        # El bloque de bit 0 (fase pi) debe ser el opuesto exacto del bloque de bit 1 (fase 0)
+        chunk1 = mod_sig.samples[:sps]
+        chunk0 = mod_sig.samples[sps : 2 * sps]
+        
+        # chunk0 ≈ -chunk1
+        diff = np.max(np.abs(chunk0 + chunk1))
+        self.assertLess(diff, 1e-4)
+
+    def test_modulation_from_digital_stream(self):
+        """Verifica modulación directa a partir de una instancia DigitalStream de Fase 1."""
+        modulator = DigitalShiftKeyingModulator(
+            mod_type="FSK",
+            samples_per_symbol=16
+        )
+        mod_sig = modulator.modulate(self.stream)
+
+        expected_samples = len(self.stream.bitstream) * 16
+        self.assertEqual(len(mod_sig.samples), expected_samples)
+        self.assertEqual(mod_sig.metadata["total_bits"], len(self.stream.bitstream))
+        self.assertTrue(mod_sig.is_digital)
+
+    def test_invalid_bitstream_inputs(self):
+        """Verifica rechazo de entradas inválidas o corruptas."""
+        modulator = DigitalShiftKeyingModulator(mod_type="ASK")
+
+        # Flujo vacío
+        with self.assertRaises(ValueError):
+            modulator.modulate(np.array([], dtype=np.uint8))
+
+        # Bits no binarios (e.g. valores 2 o -1)
+        with self.assertRaises(ValueError):
+            modulator.modulate(np.array([1, 0, 2, 0]))
+
+        # Tipo incompatible (e.g. string)
+        with self.assertRaises(TypeError):
+            modulator.modulate("101010")
 
 
 if __name__ == '__main__':

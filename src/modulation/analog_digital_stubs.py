@@ -502,28 +502,233 @@ class FMModulator(BaseModulator):
 class DigitalShiftKeyingModulator(BaseModulator):
     """
     Modulador Digital por Desplazamiento (ASK / FSK / BPSK).
-    Opera directamente sobre el DigitalStream generado en la Fase 1.
+    Opera directamente sobre el DigitalStream generado en la Fase 1 o sobre un array de bits.
     
-    Implementación sugerida para Colaborador 1:
-      - ASK: s(t) = A_k * cos(2*pi*fc*t), donde A_k in {0, 1} o {A_min, A_max}
-      - FSK: s(t) = cos(2*pi*f_k*t), donde f_k = f1 si bit=0, f_k = f2 si bit=1
-      - BPSK: s(t) = cos(2*pi*fc*t + pi * bit)
+    Técnicas implementadas:
+      1. ASK (Amplitude Shift Keying / OOK):
+         - Bit = 1: s_1(t) = A_1 * cos(2 * pi * f_c * t)
+         - Bit = 0: s_0(t) = A_0 * cos(2 * pi * f_c * t) (e.g., A_0 = 0 en OOK)
+         
+      2. FSK (Binary Frequency Shift Keying - BFSK):
+         - Bit = 1: s_1(t) = A_1 * cos(2 * pi * f_1 * t + phi)
+         - Bit = 0: s_0(t) = A_0 * cos(2 * pi * f_0 * t + phi)
+         Soporta fase continua (CPFSK) para evitar saltos abruptos y mejorar el espectro.
+         
+      3. BPSK (Binary Phase Shift Keying):
+         - Bit = 1: s_1(t) = A * cos(2 * pi * f_c * t)
+         - Bit = 0: s_0(t) = A * cos(2 * pi * f_c * t + pi) = -A * cos(2 * pi * f_c * t)
     """
 
-    def __init__(self, mod_type: str = "ASK", carrier_freq: float = 2000.0,
-                 samples_per_symbol: int = 16):
-        self.mod_type = mod_type.upper()
-        self.carrier_freq = carrier_freq
-        self.samples_per_symbol = samples_per_symbol
+    def __init__(
+        self,
+        mod_type: str = "ASK",
+        carrier_freq: float = 2000.0,
+        samples_per_symbol: int = 16,
+        sampling_rate: Optional[int] = None,
+        bit_rate: Optional[float] = None,
+        f0: Optional[float] = None,
+        f1: Optional[float] = None,
+        a0: float = 0.0,
+        a1: float = 1.0,
+        continuous_phase: bool = True,
+        normalize_output: bool = True
+    ):
+        """
+        Inicializa el modulador digital pasabanda.
+        
+        Args:
+            mod_type (str): 'ASK', 'FSK' o 'BPSK' (case-insensitive).
+            carrier_freq (float): Frecuencia de portadora principal fc en Hz (default: 2000 Hz).
+            samples_per_symbol (int): Número de muestras discretas por bit/símbolo (default: 16).
+            sampling_rate (Optional[int]): Frecuencia de muestreo de simulación fs. Si es None,
+                                           se calcula automáticamente como max(32000, 4 * f_max).
+            bit_rate (Optional[float]): Tasa binaria Rb en bits/segundo. Si se define, ajusta fs o samples_per_symbol.
+            f0 (Optional[float]): Frecuencia para bit 0 en FSK (default: fc - 500 Hz).
+            f1 (Optional[float]): Frecuencia para bit 1 en FSK (default: fc + 500 Hz).
+            a0 (float): Amplitud de portadora para bit 0 (default: 0.0 para OOK en ASK; 1.0 en FSK).
+            a1 (float): Amplitud de portadora para bit 1 (default: 1.0).
+            continuous_phase (bool): Si es True en FSK, genera fase continua (CPFSK).
+            normalize_output (bool): Escala la señal a [-1.0, 1.0] para compatibilidad DAC/audio.
+        """
+        valid_types = ("ASK", "FSK", "BPSK")
+        mod_upper = mod_type.upper()
+        if mod_upper not in valid_types:
+            raise ValueError(f"Tipo de modulación digital '{mod_type}' no válido. Use {valid_types}.")
 
-    def modulate(self, stream: DigitalStream, **kwargs) -> ModulatedSignal:
+        if carrier_freq <= 0:
+            raise ValueError(f"carrier_freq debe ser > 0 (recibido: {carrier_freq}).")
+        if samples_per_symbol < 2:
+            raise ValueError(f"samples_per_symbol debe ser >= 2 (recibido: {samples_per_symbol}).")
+        if a1 <= 0:
+            raise ValueError(f"La amplitud a1 debe ser > 0 (recibido: {a1}).")
+        if a0 < 0:
+            raise ValueError(f"La amplitud a0 no puede ser negativa (recibido: {a0}).")
+
+        self.mod_type = mod_upper
+        self.carrier_freq = float(carrier_freq)
+        self.samples_per_symbol = int(samples_per_symbol)
+        self.bit_rate = float(bit_rate) if bit_rate is not None else None
+        self.sampling_rate = int(sampling_rate) if sampling_rate is not None else None
+        self.continuous_phase = continuous_phase
+        self.normalize_output = normalize_output
+        self.a0 = float(a0) if mod_upper == "ASK" else (float(a0) if a0 > 0 else 1.0)
+        self.a1 = float(a1)
+
+        # Frecuencias para FSK
+        if mod_upper == "FSK":
+            self.f0 = float(f0) if f0 is not None else max(100.0, self.carrier_freq - 500.0)
+            self.f1 = float(f1) if f1 is not None else self.carrier_freq + 500.0
+            if self.f0 <= 0 or self.f1 <= 0:
+                raise ValueError(f"Las frecuencias FSK f0 y f1 deben ser > 0 (f0={self.f0}, f1={self.f1}).")
+            if self.f0 == self.f1:
+                warnings.warn(
+                    f"[DigitalModulator] f0 ({self.f0} Hz) es igual a f1 ({self.f1} Hz). "
+                    "No habrá discriminación frecuencial en FSK.",
+                    UserWarning
+                )
+        else:
+            self.f0 = self.carrier_freq
+            self.f1 = self.carrier_freq
+
+    def modulate(self, input_data: Any, **kwargs) -> ModulatedSignal:
         """
-        Mapea el flujo binario (0s y 1s) a símbolos pasabanda.
+        Ejecuta la modulación pasabanda digital sobre un DigitalStream o un vector de bits.
+        
+        Args:
+            input_data (Any): Instancia de DigitalStream o ndarray/list con bits binarios (0s y 1s).
+            **kwargs: Sobreescrituras opcionales de configuración:
+                      - 'mod_type': str
+                      - 'carrier_freq': float
+                      - 'samples_per_symbol': int
+                      - 'f0': float, 'f1': float
+                      - 'a0': float, 'a1': float
+                      - 'continuous_phase': bool
+                      
+        Returns:
+            ModulatedSignal: Señal modulada pasabanda digital con metadatos.
         """
-        bits = stream.bitstream
-        # TODO Colaborador 1: Implementar modulación de símbolos bit a bit
-        # Ejemplo: FSK o ASK
-        pass
+        # 1. Extraer el bitstream
+        if isinstance(input_data, DigitalStream):
+            bits = np.asarray(input_data.bitstream, dtype=np.uint8)
+        elif isinstance(input_data, (np.ndarray, list, tuple)):
+            bits = np.asarray(input_data, dtype=np.uint8).flatten()
+        else:
+            raise TypeError(
+                f"Entrada no soportada: {type(input_data)}. Se esperaba DigitalStream o array de bits binarios."
+            )
+
+        if len(bits) == 0:
+            raise ValueError("El flujo de bits está vacío. Se requiere al menos un bit.")
+
+        if not np.all((bits == 0) | (bits == 1)):
+            raise ValueError("El flujo de bits solo debe contener valores binarios {0, 1}.")
+
+        # 2. Parámetros de simulación y frecuencias
+        mod_type = str(kwargs.get("mod_type", self.mod_type)).upper()
+        fc = float(kwargs.get("carrier_freq", self.carrier_freq))
+        sps = int(kwargs.get("samples_per_symbol", self.samples_per_symbol))
+        a0 = float(kwargs.get("a0", self.a0))
+        a1 = float(kwargs.get("a1", self.a1))
+        cont_phase = bool(kwargs.get("continuous_phase", self.continuous_phase))
+
+        if mod_type == "FSK":
+            f0 = float(kwargs.get("f0", self.f0))
+            f1 = float(kwargs.get("f1", self.f1))
+            max_freq = max(f0, f1, fc)
+        else:
+            f0 = fc
+            f1 = fc
+            max_freq = fc
+
+        # 3. Determinar frecuencia de muestreo de simulación fs
+        # Asegurar Nyquist: fs >= 4 * max_freq
+        min_fs = int(np.ceil(4.0 * max_freq))
+        fs_override = kwargs.get("sampling_rate", self.sampling_rate)
+        bit_rate_override = kwargs.get("bit_rate", self.bit_rate)
+
+        if fs_override is not None:
+            fs = int(fs_override)
+        elif bit_rate_override is not None:
+            fs = int(round(bit_rate_override * sps))
+            if fs < min_fs:
+                fs = max(min_fs, 32000)
+                sps = max(2, int(round(fs / bit_rate_override)))
+        else:
+            fs = max(32000, min_fs)
+
+        # Duración de símbolo y tasa de bits efectiva
+        bit_rate = fs / sps
+        symbol_duration = sps / fs
+        num_bits = len(bits)
+        total_samples = num_bits * sps
+        t = np.arange(total_samples, dtype=np.float32) / fs
+
+        # 4. Modulación vectorial eficiente
+        bit_waveform = np.repeat(bits, sps)
+
+        if mod_type == "ASK":
+            # ASK: Bit 1 -> A1 * cos(2*pi*fc*t), Bit 0 -> A0 * cos(2*pi*fc*t)
+            amp_waveform = np.where(bit_waveform == 1, a1, a0).astype(np.float32)
+            carrier = np.cos(2.0 * np.pi * fc * t).astype(np.float32)
+            s_mod = amp_waveform * carrier
+
+        elif mod_type == "FSK":
+            # FSK: Bit 1 -> A1 * cos(2*pi*f1*t), Bit 0 -> A0 * cos(2*pi*f0*t)
+            freq_waveform = np.where(bit_waveform == 1, f1, f0).astype(np.float32)
+            amp_waveform = np.where(bit_waveform == 1, a1, a0).astype(np.float32)
+            
+            if cont_phase:
+                # Fase continua (CPFSK): theta(t) = 2*pi * integral f(tau) dtau
+                phase = (2.0 * np.pi * np.cumsum(freq_waveform) / fs).astype(np.float32)
+                s_mod = amp_waveform * np.cos(phase).astype(np.float32)
+            else:
+                # Fase discontinua con base de tiempo local por símbolo
+                t_local = np.tile(np.arange(sps, dtype=np.float32) / fs, num_bits)
+                s_mod = amp_waveform * np.cos(2.0 * np.pi * freq_waveform * t_local).astype(np.float32)
+
+        elif mod_type == "BPSK":
+            # BPSK: Bit 1 -> phase = 0, Bit 0 -> phase = pi
+            phase_offset = np.where(bit_waveform == 1, 0.0, np.pi).astype(np.float32)
+            carrier_phase = 2.0 * np.pi * fc * t + phase_offset
+            s_mod = a1 * np.cos(carrier_phase).astype(np.float32)
+
+        else:
+            raise ValueError(f"Esquema de modulación '{mod_type}' no implementado.")
+
+        # 5. Normalización para reproducción y salida
+        if self.normalize_output:
+            peak = float(np.max(np.abs(s_mod)))
+            if peak > 1e-9:
+                s_mod_out = (s_mod / peak * 0.95).astype(np.float32)
+            else:
+                s_mod_out = s_mod.astype(np.float32)
+        else:
+            s_mod_out = s_mod.astype(np.float32)
+
+        metadata: Dict[str, Any] = {
+            "digital_modulation_type": mod_type,
+            "total_bits": num_bits,
+            "samples_per_symbol": sps,
+            "bit_rate_bps": float(bit_rate),
+            "symbol_duration_ms": float(symbol_duration * 1000.0),
+            "carrier_freq": fc,
+            "f0_hz": f0 if mod_type == "FSK" else fc,
+            "f1_hz": f1 if mod_type == "FSK" else fc,
+            "a0": a0,
+            "a1": a1,
+            "continuous_phase": cont_phase if mod_type == "FSK" else False,
+            "average_power": float(np.mean(s_mod_out ** 2)),
+            "first_16_bits": "".join(str(b) for b in bits[:16]),
+        }
+
+        return ModulatedSignal(
+            samples=s_mod_out,
+            carrier_freq=fc,
+            sampling_rate=fs,
+            modulation_type=f"Digital-{mod_type}",
+            is_digital=True,
+            metadata=metadata
+        )
 
 
 def plot_modulated_signal(modulated: ModulatedSignal, zoom_ms: float = 10.0,
