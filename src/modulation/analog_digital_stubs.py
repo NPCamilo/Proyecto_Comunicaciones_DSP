@@ -9,6 +9,7 @@ ESTE MÓDULO CORRESPONDE AL PUNTO 4 DEL PROYECTO:
     - Permitir escuchar el resultado de la señal modulada."
 """
 
+import os
 import warnings
 from typing import Optional, Tuple, Dict, Any
 import numpy as np
@@ -731,49 +732,263 @@ class DigitalShiftKeyingModulator(BaseModulator):
         )
 
 
-def plot_modulated_signal(modulated: ModulatedSignal, zoom_ms: float = 10.0,
-                          save_path: Optional[str] = None, show: bool = False) -> plt.Figure:
+def plot_modulated_signal(
+    modulated: ModulatedSignal,
+    base_signal: Optional[AudioSignal] = None,
+    zoom_ms: float = 10.0,
+    save_path: Optional[str] = None,
+    show: bool = False,
+    title_suffix: str = ""
+) -> plt.Figure:
     """
-    Grafica la señal modulada en tiempo (con zoom para ver oscilaciones de portadora)
-    y en frecuencia (mostrando los lóbulos laterales de modulación).
+    Genera una visualización técnica de alta fidelidad para la señal modulada pasabanda:
+      1. Panel Temporal con Zoom: Permite apreciar las oscilaciones de alta frecuencia de la
+         portadora fc y la envolvente del mensaje modulador m(t).
+      2. Panel Espectral (FFT Unilateral en dBFS): Evidencia la traslación espectral
+         desde banda base hacia la portadora pasabanda fc y los lóbulos laterales
+         (bandas laterales USB/LSB en AM, espectro de Bessel en FM o sinc en digital).
+         
+    Args:
+        modulated (ModulatedSignal): Señal modulada (AM, FM o digital).
+        base_signal (Optional[AudioSignal]): Señal banda base original para comparar
+                                             la envolvente y la traslación espectral.
+        zoom_ms (float): Duración de la ventana de tiempo a graficar (en milisegundos).
+        save_path (Optional[str]): Ruta para exportar la figura en formato PNG.
+        show (bool): Si es True, muestra la ventana emergente de Matplotlib.
+        title_suffix (str): Texto complementario para el encabezado.
+        
+    Returns:
+        plt.Figure: Objeto de figura de Matplotlib.
     """
     fs = modulated.sampling_rate
     samples = modulated.samples
     t = modulated.time_vector
-    
-    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7), constrained_layout=True)
+    fc = modulated.carrier_freq
+    mod_type = modulated.modulation_type
+
+    fig, (ax_time, ax_freq) = plt.subplots(2, 1, figsize=(11, 7.5), constrained_layout=True)
     fig.patch.set_facecolor('#0d1117')
-    
-    for ax in (ax1, ax2):
+
+    for ax in (ax_time, ax_freq):
         ax.set_facecolor('#161b22')
-        ax.tick_params(colors='#c9d1d9')
-        ax.grid(True, color='#30363d', linestyle='--', alpha=0.7)
+        ax.tick_params(colors='#c9d1d9', labelsize=9)
+        ax.grid(True, color='#30363d', linestyle='--', linewidth=0.7, alpha=0.8)
         for spine in ax.spines.values():
             spine.set_color('#30363d')
 
-    # Zoom temporal
+    # -------------------------------------------------------------
+    # 1. PANEL TEMPORAL: ZOOM MICROCÓPICO DE PORTADORA Y ENVOLVENTE
+    # -------------------------------------------------------------
     num_zoom = min(int(zoom_ms * 1e-3 * fs), len(samples))
-    ax1.plot(t[:num_zoom] * 1000.0, samples[:num_zoom], color='#79c0ff', linewidth=1.1)
-    ax1.set_title(f"Señal Modulada {modulated.modulation_type} - Zoom Temporal ({zoom_ms} ms)",
-                  color='#f0f6fc', fontsize=11, fontweight='bold')
-    ax1.set_xlabel("Tiempo [ms]", color='#c9d1d9')
-    ax1.set_ylabel("Amplitud", color='#c9d1d9')
+    t_zoom_ms = t[:num_zoom] * 1000.0
+    s_zoom = samples[:num_zoom]
 
-    # Espectro
-    fft_vals = np.abs(np.fft.rfft(samples * np.hanning(len(samples))))
+    ax_time.plot(t_zoom_ms, s_zoom, color='#58a6ff', linewidth=1.1,
+                 label=f"s(t) Pasabanda ({mod_type} | fc = {fc:,.0f} Hz)")
+
+    # Si se suministra señal banda base, graficar envolvente de referencia
+    if base_signal is not None:
+        t_base = base_signal.time_vector
+        m_base = base_signal.samples
+        mask_base = t_base <= (zoom_ms * 1e-3)
+        if np.any(mask_base):
+            t_base_ms = t_base[mask_base] * 1000.0
+            m_zoom = m_base[mask_base]
+            
+            # En AM-DSB-FC graficar la envolvente real [Ac + m(t)]
+            ac = modulated.metadata.get("carrier_amplitude", None)
+            if ac is not None and ac > 0:
+                env_upper = (ac + m_zoom) / (ac + float(np.max(np.abs(m_zoom)))) * 0.95
+                ax_time.plot(t_base_ms, env_upper, color='#f0883e', linestyle='--', linewidth=1.3,
+                             label="Envolvente Teórica +[Ac + m(t)]")
+                ax_time.plot(t_base_ms, -env_upper, color='#f0883e', linestyle=':', linewidth=1.1,
+                             alpha=0.7, label="Envolvente Teórica -[Ac + m(t)]")
+            else:
+                ax_time.plot(t_base_ms, m_zoom, color='#3fb950', linestyle='--', linewidth=1.3,
+                             alpha=0.85, label="Mensaje Banda Base m(t)")
+
+    # Anotación del período de portadora Tc
+    tc_ms = (1.0 / fc) * 1000.0 if fc > 0 else 0.0
+    ax_time.set_title(
+        f"1. Dominio del Tiempo: Señal Modulada {mod_type} "
+        f"(Zoom de {zoom_ms:.1f} ms | Período Portadora Tc = {tc_ms:.3f} ms | fs = {fs:,} Hz){title_suffix}",
+        color='#f0f6fc', fontsize=11, fontweight='bold', pad=8
+    )
+    ax_time.set_xlabel("Tiempo [milisegundos]", color='#c9d1d9', fontsize=9)
+    ax_time.set_ylabel("Amplitud Normalizada", color='#c9d1d9', fontsize=9)
+    ax_time.set_xlim(0, zoom_ms)
+    ax_time.set_ylim(-1.08, 1.08)
+    ax_time.legend(facecolor='#21262d', edgecolor='#30363d', labelcolor='#f0f6fc', loc='upper right', fontsize=8)
+
+    # -------------------------------------------------------------
+    # 2. PANEL ESPECTRAL: TRASLACIÓN EN FRECUENCIA Y LÓBULOS LATERALES
+    # -------------------------------------------------------------
+    win = np.hanning(len(samples))
+    coherent_gain = np.sum(win) / len(samples)
+    fft_vals = np.fft.rfft(samples * win)
     freqs = np.fft.rfftfreq(len(samples), d=1.0 / fs)
-    fft_db = 20 * np.log10(np.clip(fft_vals / (np.max(fft_vals) + 1e-12), 1e-6, 1.0))
-    ax2.plot(freqs, fft_db, color='#d2a8ff', linewidth=1.0)
-    ax2.axvline(modulated.carrier_freq, color='#f85149', linestyle='--',
-                label=f'Portadora fc = {modulated.carrier_freq:.1f} Hz')
-    ax2.set_title(f"Densidad Espectral de la Señal Modulada {modulated.modulation_type}",
-                  color='#f0f6fc', fontsize=11, fontweight='bold')
-    ax2.set_xlabel("Frecuencia [Hz]", color='#c9d1d9')
-    ax2.set_ylabel("Magnitud [dBFS]", color='#c9d1d9')
-    ax2.legend(facecolor='#21262d', edgecolor='#30363d', labelcolor='#f0f6fc')
+    mag_lin = np.abs(fft_vals) / (len(samples) * coherent_gain)
+    if len(mag_lin) > 2:
+        mag_lin[1:-1] *= 2.0
+    mag_db = 20 * np.log10(np.clip(mag_lin / (np.max(mag_lin) + 1e-12), 1e-6, 1.0))
+
+    ax_freq.plot(freqs, mag_db, color='#bc8cff', linewidth=1.1,
+                 label=f"Espectro Modulado Pasabanda |S(f)| ({mod_type})")
+
+    # Línea vertical en la portadora central fc
+    ax_freq.axvline(fc, color='#f85149', linestyle='--', linewidth=1.5,
+                    label=f"Portadora Central fc = {fc:,.1f} Hz")
+
+    # Resaltar lóbulos laterales específicos según el tipo de modulación
+    if "AM" in mod_type:
+        w_hz = modulated.metadata.get("message_bandwidth_w_hz", 3000.0)
+        ax_freq.axvspan(max(0, fc - w_hz), fc, color='#f0883e', alpha=0.15,
+                        label=f"Banda Lateral Inferior (LSB: {fc - w_hz:,.0f} - {fc:,.0f} Hz)")
+        ax_freq.axvspan(fc, fc + w_hz, color='#3fb950', alpha=0.15,
+                        label=f"Banda Lateral Superior (USB: {fc:,.0f} - {fc + w_hz:,.0f} Hz)")
+    elif "FM" in mod_type:
+        carson_bw = modulated.metadata.get("bandwidth_carson_hz", None)
+        if carson_bw:
+            f_low = max(0, fc - carson_bw / 2.0)
+            f_high = fc + carson_bw / 2.0
+            ax_freq.axvspan(f_low, f_high, color='#d29922', alpha=0.15,
+                            label=f"Ancho de Banda Carson (B_FM = {carson_bw:,.0f} Hz)")
+    elif "FSK" in mod_type:
+        f0 = modulated.metadata.get("f0_hz", fc - 500.0)
+        f1 = modulated.metadata.get("f1_hz", fc + 500.0)
+        ax_freq.axvline(f0, color='#d29922', linestyle=':', linewidth=1.3,
+                        label=f"Bit 0 (f0 = {f0:,.0f} Hz)")
+        ax_freq.axvline(f1, color='#3fb950', linestyle=':', linewidth=1.3,
+                        label=f"Bit 1 (f1 = {f1:,.0f} Hz)")
+
+    # Espectro banda base de fondo si se suministra base_signal
+    if base_signal is not None:
+        fs_b = base_signal.sample_rate
+        win_b = np.hanning(len(base_signal.samples))
+        fft_b = np.fft.rfft(base_signal.samples * win_b)
+        freqs_b = np.fft.rfftfreq(len(base_signal.samples), d=1.0 / fs_b)
+        mag_b = np.abs(fft_b) / (len(base_signal.samples) * (np.sum(win_b) / len(base_signal.samples)))
+        mag_db_b = 20 * np.log10(np.clip(mag_b / (np.max(mag_b) + 1e-12), 1e-6, 1.0))
+        ax_freq.plot(freqs_b, mag_db_b, color='#8b949e', linestyle=':', linewidth=0.9, alpha=0.6,
+                     label="Espectro Banda Base Original |M(f)| (f ≈ 0)")
+
+    # Enfocar eje de frecuencia en la vecindad de la portadora y bandas laterales
+    f_max_view = min(fs / 2.0, max(fc * 2.2, fc + 6000.0))
+    ax_freq.set_title(
+        f"2. Dominio de la Frecuencia: Traslación Espectral y Lóbulos Laterales "
+        f"(Visualización centrada en portadora fc = {fc:,.0f} Hz)",
+        color='#f0f6fc', fontsize=11, fontweight='bold', pad=8
+    )
+    ax_freq.set_xlabel("Frecuencia [Hz]", color='#c9d1d9', fontsize=9)
+    ax_freq.set_ylabel("Magnitud Espectral [dBFS]", color='#c9d1d9', fontsize=9)
+    ax_freq.set_xlim(0, f_max_view)
+    ax_freq.set_ylim(-70, 5)
+    ax_freq.legend(facecolor='#21262d', edgecolor='#30363d', labelcolor='#f0f6fc', loc='upper right', fontsize=8)
 
     if save_path:
+        os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
         fig.savefig(save_path, dpi=300, facecolor=fig.get_facecolor(), edgecolor='none')
+        print(f"[Grafica Modulacion] Figura exportada a: {save_path}")
+
+    if show:
+        plt.show()
+
+    return fig
+
+
+def plot_modulation_spectrum_translation(
+    base_signal: AudioSignal,
+    modulated: ModulatedSignal,
+    save_path: Optional[str] = None,
+    show: bool = False
+) -> plt.Figure:
+    """
+    Gráfica comparativa dedicada que demuestra explícitamente el teorema de modulación
+    (traslación en frecuencia):
+      - Panel Superior: Señal mensaje m(t) en banda base centrada en f = 0 Hz.
+      - Panel Inferior: Señal modulada s(t) trasladada en frecuencia a f = fc con
+        sus lóbulos laterales simétricos.
+        
+    Args:
+        base_signal (AudioSignal): Señal de audio original en banda base.
+        modulated (ModulatedSignal): Señal modulada pasabanda.
+        save_path (Optional[str]): Ruta para exportar la figura (.png).
+        show (bool): Si es True, muestra la ventana gráfica.
+        
+    Returns:
+        plt.Figure: Objeto de figura de Matplotlib.
+    """
+    fig, (ax1, ax2) = plt.subplots(2, 1, figsize=(11, 7.5), constrained_layout=True)
+    fig.patch.set_facecolor('#0d1117')
+
+    for ax in (ax1, ax2):
+        ax.set_facecolor('#161b22')
+        ax.tick_params(colors='#c9d1d9', labelsize=9)
+        ax.grid(True, color='#30363d', linestyle='--', linewidth=0.7, alpha=0.8)
+        for spine in ax.spines.values():
+            spine.set_color('#30363d')
+
+    # Espectro 1: Banda Base Original
+    fs1 = base_signal.sample_rate
+    x1 = base_signal.samples
+    win1 = np.hanning(len(x1))
+    fft1 = np.fft.rfft(x1 * win1)
+    freqs1 = np.fft.rfftfreq(len(x1), d=1.0 / fs1)
+    mag1 = np.abs(fft1) / (len(x1) * (np.sum(win1) / len(x1)))
+    mag_db1 = 20 * np.log10(np.clip(mag1 / (np.max(mag1) + 1e-12), 1e-6, 1.0))
+
+    ax1.plot(freqs1, mag_db1, color='#58a6ff', linewidth=1.1, label='|M(f)| Banda Base Original')
+    w_est = base_signal.metadata.get("f_max_effective_hz", 3000.0)
+    ax1.axvline(w_est, color='#3fb950', linestyle='--', linewidth=1.3,
+                label=f'Ancho de Banda W (f_max) = {w_est:,.1f} Hz')
+    ax1.set_title("1. Espectro de la Señal Original m(t) en Banda Base (Centrada en f = 0 Hz)",
+                  color='#f0f6fc', fontsize=11, fontweight='bold', pad=8)
+    ax1.set_xlabel("Frecuencia [Hz]", color='#c9d1d9', fontsize=9)
+    ax1.set_ylabel("Magnitud [dBFS]", color='#c9d1d9', fontsize=9)
+    ax1.set_xlim(0, max(8000.0, modulated.carrier_freq * 1.5))
+    ax1.set_ylim(-70, 5)
+    ax1.legend(facecolor='#21262d', edgecolor='#30363d', labelcolor='#f0f6fc', loc='upper right', fontsize=8)
+
+    # Espectro 2: Señal Modulada Pasabanda
+    fs2 = modulated.sampling_rate
+    x2 = modulated.samples
+    win2 = np.hanning(len(x2))
+    fft2 = np.fft.rfft(x2 * win2)
+    freqs2 = np.fft.rfftfreq(len(x2), d=1.0 / fs2)
+    mag2 = np.abs(fft2) / (len(x2) * (np.sum(win2) / len(x2)))
+    mag_db2 = 20 * np.log10(np.clip(mag2 / (np.max(mag2) + 1e-12), 1e-6, 1.0))
+
+    fc = modulated.carrier_freq
+    ax2.plot(freqs2, mag_db2, color='#bc8cff', linewidth=1.1,
+             label=f'|S(f)| Señal Modulada Pasabanda ({modulated.modulation_type})')
+    ax2.axvline(fc, color='#f85149', linestyle='--', linewidth=1.5,
+                label=f'Portadora fc = {fc:,.1f} Hz (Traslación Espectral: 0 -> fc)')
+    
+    # Anotación flecha de traslación
+    ax2.annotate(
+        f'Traslación de Frecuencia: f_c = {fc:,.0f} Hz\n(Lóbulos Laterales Simétricos)',
+        xy=(fc, 0), xytext=(fc + 800, -25),
+        arrowprops=dict(facecolor='#f85149', shrink=0.08, width=1.5, headwidth=6),
+        color='#f0f6fc', fontsize=9, fontweight='bold',
+        bbox=dict(boxstyle='round,pad=0.3', facecolor='#21262d', edgecolor='#30363d')
+    )
+
+    ax2.set_title(
+        f"2. Espectro Trasladado en Frecuencia: Señal Modulada {modulated.modulation_type} "
+        f"[Banda Pasante: fc ± W = {max(0, fc - w_est):,.0f} a {fc + w_est:,.0f} Hz]",
+        color='#f0f6fc', fontsize=11, fontweight='bold', pad=8
+    )
+    ax2.set_xlabel("Frecuencia [Hz]", color='#c9d1d9', fontsize=9)
+    ax2.set_ylabel("Magnitud [dBFS]", color='#c9d1d9', fontsize=9)
+    ax2.set_xlim(0, max(8000.0, fc * 1.5))
+    ax2.set_ylim(-70, 5)
+    ax2.legend(facecolor='#21262d', edgecolor='#30363d', labelcolor='#f0f6fc', loc='upper right', fontsize=8)
+
+    if save_path:
+        os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+        fig.savefig(save_path, dpi=300, facecolor=fig.get_facecolor(), edgecolor='none')
+        print(f"[Grafica Traslacion] Figura exportada a: {save_path}")
+
     if show:
         plt.show()
 

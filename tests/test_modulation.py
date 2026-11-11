@@ -3,9 +3,14 @@ Suite de Pruebas Unitarias para el Módulo de Modulación (Fase 2)
 Universidad Tecnológica de Pereira (UTP) - Comunicaciones I
 """
 
+import os
+import tempfile
 import unittest
 import warnings
 import numpy as np
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 from src.core.base import AudioSignal, DigitalStream, ModulatedSignal
 from src.core.audio_io import generate_synthetic_speech_phrase
@@ -13,7 +18,9 @@ from src.core.quantization import quantize_signal
 from src.modulation.analog_digital_stubs import (
     AMModulator,
     FMModulator,
-    DigitalShiftKeyingModulator
+    DigitalShiftKeyingModulator,
+    plot_modulated_signal,
+    plot_modulation_spectrum_translation
 )
 
 
@@ -342,6 +349,88 @@ class TestDigitalModulation(unittest.TestCase):
         # Tipo incompatible (e.g. string)
         with self.assertRaises(TypeError):
             modulator.modulate("101010")
+
+
+class TestModulationPlotting(unittest.TestCase):
+
+    def setUp(self):
+        self.sample_rate = 16000
+        self.duration = 1.0
+        self.samples = generate_synthetic_speech_phrase(duration=self.duration, sample_rate=self.sample_rate)
+        self.audio = AudioSignal(
+            samples=self.samples,
+            sample_rate=self.sample_rate,
+            bit_depth=16,
+            duration=self.duration
+        )
+        self.am_mod = AMModulator(carrier_freq=3000.0, mod_index=0.8).modulate(self.audio)
+        self.fm_mod = FMModulator(carrier_freq=3000.0, freq_dev=1000.0).modulate(self.audio)
+        self.bits = np.array([1, 0, 1, 1, 0, 1, 0, 0], dtype=np.uint8)
+        self.dig_mod = DigitalShiftKeyingModulator(mod_type="FSK", carrier_freq=2000.0).modulate(self.bits)
+
+    def tearDown(self):
+        plt.close('all')
+
+    def test_plot_modulated_signal_am(self):
+        """Verifica la generación y exportación del gráfico de señal AM (tiempo y FFT)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_path = os.path.join(tmpdir, "plot_am_test.png")
+            fig = plot_modulated_signal(
+                self.am_mod,
+                base_signal=self.audio,
+                zoom_ms=10.0,
+                save_path=save_path,
+                show=False
+            )
+            self.assertIsNotNone(fig)
+            self.assertEqual(len(fig.axes), 2)
+            self.assertTrue(os.path.exists(save_path))
+            self.assertGreater(os.path.getsize(save_path), 1000)
+
+    def test_plot_modulated_signal_fm(self):
+        """Verifica la generación y exportación del gráfico de señal FM con regla de Carson."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_path = os.path.join(tmpdir, "plot_fm_test.png")
+            fig = plot_modulated_signal(
+                self.fm_mod,
+                zoom_ms=8.0,
+                save_path=save_path,
+                show=False
+            )
+            self.assertIsNotNone(fig)
+            self.assertEqual(len(fig.axes), 2)
+            self.assertTrue(os.path.exists(save_path))
+            self.assertGreater(os.path.getsize(save_path), 1000)
+
+    def test_plot_modulated_signal_digital_fsk(self):
+        """Verifica la generación gráfica para modulación digital FSK con frecuencias f0 y f1."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_path = os.path.join(tmpdir, "plot_fsk_test.png")
+            fig = plot_modulated_signal(
+                self.dig_mod,
+                zoom_ms=15.0,
+                save_path=save_path,
+                show=False
+            )
+            self.assertIsNotNone(fig)
+            self.assertEqual(len(fig.axes), 2)
+            self.assertTrue(os.path.exists(save_path))
+            self.assertGreater(os.path.getsize(save_path), 1000)
+
+    def test_plot_modulation_spectrum_translation(self):
+        """Verifica la gráfica comparativa de traslación espectral (banda base vs pasabanda)."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            save_path = os.path.join(tmpdir, "plot_translation_test.png")
+            fig = plot_modulation_spectrum_translation(
+                base_signal=self.audio,
+                modulated=self.am_mod,
+                save_path=save_path,
+                show=False
+            )
+            self.assertIsNotNone(fig)
+            self.assertEqual(len(fig.axes), 2)
+            self.assertTrue(os.path.exists(save_path))
+            self.assertGreater(os.path.getsize(save_path), 1000)
 
 
 if __name__ == '__main__':
