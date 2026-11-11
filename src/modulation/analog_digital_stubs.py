@@ -245,6 +245,260 @@ class AMModulator(BaseModulator):
         )
 
 
+class FMModulator(BaseModulator):
+    """
+    Modulador de Frecuencia Analógica (FM de Banda Angosta y Banda Ancha).
+    
+    Ecuación General de FM:
+        s_FM(t) = A_c * cos(theta(t))
+        theta(t) = 2 * pi * f_c * t + 2 * pi * k_f * integral_0^t m(tau) dtau
+        
+    Donde:
+        - m(t) es la señal de audio en banda base normalizada.
+        - A_c es la amplitud de la portadora.
+        - f_c es la frecuencia de la portadora (Hz).
+        - k_f es la constante de desviación/sensibilidad en frecuencia (Hz / Voltio).
+        - Desviación de frecuencia de cresta: Delta_f = k_f * max|m(t)| (Hz).
+        - Frecuencia instantánea: f_i(t) = f_c + k_f * m(t).
+        - Índice de modulación beta: beta = Delta_f / W, donde W es el ancho de banda del mensaje.
+        - Ancho de banda por Regla de Carson: B_FM = 2 * (Delta_f + W) = 2 * W * (beta + 1).
+    """
+
+    def __init__(
+        self,
+        carrier_freq: float = 3000.0,
+        freq_dev: Optional[float] = 1000.0,
+        mod_index_beta: Optional[float] = None,
+        kf: Optional[float] = None,
+        carrier_amp: float = 1.0,
+        audio_bandwidth: Optional[float] = None,
+        target_sample_rate: Optional[int] = None,
+        normalize_output: bool = True
+    ):
+        """
+        Inicializa el modulador de frecuencia FM.
+        
+        Args:
+            carrier_freq (float): Frecuencia portadora central fc en Hz (default: 3000 Hz).
+            freq_dev (Optional[float]): Desviación máxima de frecuencia Delta_f en Hz (default: 1000 Hz).
+            mod_index_beta (Optional[float]): Índice de modulación beta deseado. Si se suministra,
+                                             Delta_f = beta * W.
+            kf (Optional[float]): Sensibilidad de frecuencia k_f en Hz/V. Si se suministra,
+                                  Delta_f = k_f * max|m(t)|.
+            carrier_amp (float): Amplitud de portadora Ac (default: 1.0).
+            audio_bandwidth (Optional[float]): Ancho de banda de mensaje W en Hz. Si es None,
+                                               se estima a partir del espectro del audio.
+            target_sample_rate (Optional[int]): Frecuencia de muestreo de simulación. Si es None,
+                                                se calcula automáticamente para satisfacer la Regla
+                                                de Carson y evitar aliasing espectral.
+            normalize_output (bool): Normaliza la amplitud a [-1.0, 1.0] para reproducción DAC.
+        """
+        if carrier_freq <= 0:
+            raise ValueError(f"carrier_freq debe ser > 0 (recibido: {carrier_freq}).")
+        if carrier_amp <= 0:
+            raise ValueError(f"carrier_amp debe ser > 0 (recibido: {carrier_amp}).")
+        if freq_dev is not None and freq_dev <= 0:
+            raise ValueError(f"freq_dev debe ser > 0 (recibido: {freq_dev}).")
+        if mod_index_beta is not None and mod_index_beta <= 0:
+            raise ValueError(f"mod_index_beta debe ser > 0 (recibido: {mod_index_beta}).")
+        if kf is not None and kf <= 0:
+            raise ValueError(f"kf debe ser > 0 (recibido: {kf}).")
+
+        self.carrier_freq = float(carrier_freq)
+        self.freq_dev = float(freq_dev) if freq_dev is not None else None
+        self.mod_index_beta = float(mod_index_beta) if mod_index_beta is not None else None
+        self.kf = float(kf) if kf is not None else None
+        self.carrier_amp = float(carrier_amp)
+        self.audio_bandwidth = float(audio_bandwidth) if audio_bandwidth is not None else None
+        self.target_sample_rate = target_sample_rate
+        self.normalize_output = normalize_output
+
+    def get_instantaneous_frequency(self, audio: AudioSignal, **kwargs) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Calcula el vector temporal y la frecuencia instantánea f_i(t) = f_c + k_f * m(t).
+        
+        Args:
+            audio (AudioSignal): Señal de mensaje.
+            
+        Returns:
+            Tuple[np.ndarray, np.ndarray]: (tiempo [s], frecuencia instantánea [Hz])
+        """
+        fc = float(kwargs.get("carrier_freq", self.carrier_freq))
+        m = audio.samples
+        peak_m = float(np.max(np.abs(m))) or 1.0
+
+        if self.kf is not None:
+            kf = self.kf
+        elif self.freq_dev is not None:
+            kf = self.freq_dev / peak_m
+        elif self.mod_index_beta is not None:
+            w = self.audio_bandwidth or 3000.0
+            kf = (self.mod_index_beta * w) / peak_m
+        else:
+            kf = 1000.0 / peak_m
+
+        f_inst = fc + kf * m
+        return audio.time_vector, f_inst
+
+    def modulate(self, audio: AudioSignal, **kwargs) -> ModulatedSignal:
+        """
+        Ejecuta la modulación de frecuencia (FM) sobre la señal de audio banda base.
+        
+        Args:
+            audio (AudioSignal): Señal de entrada de audio normalizada.
+            **kwargs: Parámetros opcionales para sobreescribir la configuración:
+                      - 'carrier_freq': float
+                      - 'freq_dev': float
+                      - 'mod_index_beta': float
+                      - 'kf': float
+                      - 'carrier_amp': float
+                      - 'target_sample_rate': int
+                      
+        Returns:
+            ModulatedSignal: Objeto con la señal FM pasabanda y metadatos de modulación.
+        """
+        if not isinstance(audio, AudioSignal):
+            raise TypeError(f"Se esperaba una instancia de AudioSignal, recibido: {type(audio)}")
+
+        fc = float(kwargs.get("carrier_freq", self.carrier_freq))
+        ac = float(kwargs.get("carrier_amp", self.carrier_amp))
+        target_fs = kwargs.get("target_sample_rate", self.target_sample_rate)
+
+        m = audio.samples
+        fs_orig = audio.sample_rate
+        peak_m = float(np.max(np.abs(m)))
+        if peak_m < 1e-9:
+            peak_m = 1.0
+
+        # 1. Determinar ancho de banda de mensaje W (f_max efectivo)
+        w = kwargs.get("audio_bandwidth", self.audio_bandwidth)
+        if w is None:
+            w = audio.metadata.get("f_max_effective_hz", None)
+            if w is None or w <= 0:
+                from ..core.analyzer import compute_spectrum, estimate_max_frequency
+                freqs, mag_lin, _ = compute_spectrum(audio)
+                w = estimate_max_frequency(freqs, mag_lin, energy_threshold=0.99)
+                if w < 100.0:
+                    w = 3000.0
+        w = float(w)
+
+        # 2. Determinar constante de sensibilidad kf y desviación Delta_f
+        override_beta = kwargs.get("mod_index_beta", self.mod_index_beta)
+        override_dev = kwargs.get("freq_dev", self.freq_dev)
+        override_kf = kwargs.get("kf", self.kf)
+
+        if override_beta is not None:
+            beta = float(override_beta)
+            delta_f = beta * w
+            kf = delta_f / peak_m
+        elif override_dev is not None:
+            delta_f = float(override_dev)
+            kf = delta_f / peak_m
+            beta = delta_f / w if w > 0 else 1.0
+        elif override_kf is not None:
+            kf = float(override_kf)
+            delta_f = kf * peak_m
+            beta = delta_f / w if w > 0 else 1.0
+        else:
+            delta_f = 1000.0
+            kf = delta_f / peak_m
+            beta = delta_f / w if w > 0 else 1.0
+
+        # Advertencia si la desviación de frecuencia causa frecuencias instantáneas negativas
+        if delta_f >= fc:
+            warnings.warn(
+                f"[FMModulator] Advertencia: Delta_f ({delta_f:.1f} Hz) >= fc ({fc:.1f} Hz). "
+                f"La frecuencia instantánea mínima será negativa ({fc - delta_f:.1f} Hz), "
+                f"lo cual puede inducir aliasing espectral por inversión de fase en banda base.",
+                UserWarning,
+                stacklevel=2
+            )
+
+        # 3. Ancho de banda de Carson y tasa de simulación mínima anti-aliasing
+        # B_Carson = 2 * (Delta_f + W)
+        carson_bw = 2.0 * (delta_f + w)
+        max_freq_component = fc + delta_f + w
+        min_required_fs = int(np.ceil(max(4.0 * fc, 2.0 * max_freq_component)))
+
+        if target_fs is not None:
+            fs_sim = int(target_fs)
+        elif fs_orig < min_required_fs:
+            fs_sim = max(min_required_fs, 32000)
+        else:
+            fs_sim = fs_orig
+
+        # Remuestrear si la simulación requiere mayor resolución
+        if fs_sim != fs_orig:
+            new_num_samples = int(round(len(m) * fs_sim / fs_orig))
+            m_sim = signal_proc.resample(m, new_num_samples).astype(np.float32)
+            t_sim = np.linspace(0.0, len(m) / fs_orig, new_num_samples, endpoint=False, dtype=np.float32)
+            resampled = True
+        else:
+            m_sim = m
+            t_sim = audio.time_vector
+            resampled = False
+
+        # 4. Integración temporal de la señal de mensaje: integral_0^t m(tau) dtau
+        # Se emplea la regla del trapecio acumulativa para alta precisión
+        try:
+            from scipy.integrate import cumulative_trapezoid
+            integral_m = cumulative_trapezoid(m_sim, dx=1.0 / fs_sim, initial=0.0).astype(np.float32)
+        except ImportError:
+            integral_m = (np.cumsum(m_sim) / fs_sim).astype(np.float32)
+
+        # 5. Generación de fase instantánea y modulación FM
+        # theta(t) = 2*pi*fc*t + 2*pi*kf*integral_m(t)
+        phase_carrier = 2.0 * np.pi * fc * t_sim
+        phase_modulation = 2.0 * np.pi * kf * integral_m
+        theta = phase_carrier + phase_modulation
+
+        s_fm = ac * np.cos(theta).astype(np.float32)
+
+        # 6. Frecuencia instantánea resultante
+        f_inst = fc + kf * m_sim
+        min_f_inst = float(np.min(f_inst))
+        max_f_inst = float(np.max(f_inst))
+
+        # Clasificación entre banda angosta y banda ancha
+        fm_regime = "NBFM" if beta < 0.5 else "WBFM"
+
+        # 7. Normalización para reproducción y salida
+        if self.normalize_output:
+            max_val = float(np.max(np.abs(s_fm)))
+            if max_val > 1e-9:
+                s_fm_out = (s_fm / max_val * 0.95).astype(np.float32)
+            else:
+                s_fm_out = s_fm.astype(np.float32)
+        else:
+            s_fm_out = s_fm.astype(np.float32)
+
+        metadata: Dict[str, Any] = {
+            "modulation_type": f"FM-{fm_regime}",
+            "carrier_freq": fc,
+            "carrier_amplitude": ac,
+            "freq_deviation_hz": float(delta_f),
+            "freq_sensitivity_kf": float(kf),
+            "modulation_index_beta": float(beta),
+            "message_bandwidth_w_hz": float(w),
+            "bandwidth_carson_hz": float(carson_bw),
+            "fm_regime": fm_regime,
+            "min_instantaneous_freq": min_f_inst,
+            "max_instantaneous_freq": max_f_inst,
+            "resampled": resampled,
+            "original_sample_rate": fs_orig,
+            "simulation_sample_rate": fs_sim,
+        }
+
+        return ModulatedSignal(
+            samples=s_fm_out,
+            carrier_freq=fc,
+            sampling_rate=fs_sim,
+            modulation_type=f"FM-{fm_regime}",
+            is_digital=False,
+            metadata=metadata
+        )
+
+
 class DigitalShiftKeyingModulator(BaseModulator):
     """
     Modulador Digital por Desplazamiento (ASK / FSK / BPSK).
