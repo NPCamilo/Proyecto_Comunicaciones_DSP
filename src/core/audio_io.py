@@ -6,7 +6,7 @@ Universidad Tecnológica de Pereira (UTP) - Comunicaciones I
 import os
 import platform
 import time
-from typing import Optional, Tuple
+from typing import Optional, Tuple, Any
 import numpy as np
 from scipy.io import wavfile
 
@@ -106,18 +106,22 @@ def save_wav(filepath: str, signal: AudioSignal, bit_depth: int = 16) -> str:
     return os.path.abspath(filepath)
 
 
-def play_audio(audio_input: AudioSignal | str, async_play: bool = False) -> bool:
+def play_audio(audio_input: Any, async_play: bool = False) -> bool:
     """
-    Reproduce una señal de audio utilizando los controladores nativos del sistema operativo.
+    Reproduce una señal de audio o señal modulada utilizando los controladores nativos del sistema operativo.
     En Windows utiliza `winsound` (cero dependencias externas).
     
     Args:
-        audio_input: Instancia de AudioSignal o ruta de archivo WAV.
+        audio_input: Instancia de AudioSignal, ModulatedSignal o ruta de archivo WAV.
         async_play: Si True, reproduce en segundo plano; si False, espera a terminar.
         
     Returns:
         bool: True si la reproducción fue exitosa.
     """
+    # Si es una señal modulada o similar, convertirla a AudioSignal
+    if hasattr(audio_input, "to_audio_signal"):
+        audio_input = audio_input.to_audio_signal()
+
     # Si recibimos un AudioSignal, guardamos en un archivo temporal
     temp_file = None
     if isinstance(audio_input, AudioSignal):
@@ -252,12 +256,15 @@ def generate_synthetic_speech_phrase(duration: float = 3.0, sample_rate: int = 1
     envelope = np.zeros_like(t)
     num_syllables = 5
     syllable_duration = duration / num_syllables
+    pad = min(0.02, syllable_duration * 0.15)
     for i in range(num_syllables):
-        t_start = i * syllable_duration + 0.05
-        t_end = (i + 1) * syllable_duration - 0.05
-        mask = (t >= t_start) & (t <= t_end)
-        t_local = (t[mask] - t_start) / (t_end - t_start)
-        envelope[mask] = np.sin(np.pi * t_local) ** 2
+        t_start = i * syllable_duration + pad
+        t_end = (i + 1) * syllable_duration - pad
+        dt = t_end - t_start
+        if dt > 1e-6:
+            mask = (t >= t_start) & (t <= t_end)
+            t_local = (t[mask] - t_start) / dt
+            envelope[mask] = np.sin(np.pi * t_local) ** 2
 
     # Componente fricativo no sonoro (ruido de aire de fonemas sordos e.g. /s/)
     noise = np.random.normal(0, 0.08, num_samples)
