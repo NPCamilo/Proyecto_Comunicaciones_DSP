@@ -1,0 +1,12 @@
+# Excluir archivos pesados de desarrollo y pruebas al desplegar en Vercel
+tests/
+.github/
+.venv/
+venv/
+node_modules/
+.next/
+__pycache__/
+*.pyc
+docs/
+*.tmp
+audio_data/*.wav

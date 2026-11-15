@@ -47,3 +47,13 @@ desktop.ini
 # audio_data/*.png
 # Conservar carpeta audio_data con .gitkeep
 !audio_data/.gitkeep
+
+# Node & Next.js
+node_modules/
+.next/
+out/
+dist/
+*.tsbuildinfo
+.vercel/
+.env*.local
+

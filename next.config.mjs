@@ -25,6 +25,9 @@ const nextConfig = {
     ];
   },
   async rewrites() {
+    if (process.env.VERCEL) {
+      return [];
+    }
     return [
       {
         source: "/api/:path*",
