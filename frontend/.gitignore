@@ -1,0 +1,23 @@
+# Next.js & Node
+node_modules/
+.next/
+out/
+build/
+dist/
+*.tsbuildinfo
+
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Environment variables
+.env*.local
+.env
+
+# Editor / OS
+.DS_Store
+*.pem
+.idea/
+.vscode/
