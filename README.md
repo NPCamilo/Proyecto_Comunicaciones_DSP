@@ -46,9 +46,9 @@ Proyecto_Comunicaciones_DSP/
 │   │   ├── __init__.py
 │   │   └── analog_digital_stubs.py        # Moduladores AM/FM y ASK/FSK/BPSK
 │   │
-│   ├── demodulation/                      # FASE 3: Asignada a Colaborador 2
+│   ├── demodulation/                      # FASE 3: DEMODULACIÓN Y RECUPERACIÓN IMPLEMENTADA
 │   │   ├── __init__.py
-│   │   └── demod_stubs.py                 # Demoduladores coherentes, envolvente y LPF
+│   │   └── demod_stubs.py                 # Demoduladores AM (Coherente/Hilbert), FM y Digital (ASK/FSK/BPSK)
 │   │
 │   └── reconstruction/                    # FASE 4: Asignada a Colaborador 3
 │       ├── __init__.py
@@ -56,9 +56,13 @@ Proyecto_Comunicaciones_DSP/
 │
 ├── tests/                                 # Suite de Pruebas Unitarias Automatizadas
 │   ├── __init__.py
-│   └── test_fase1.py                      # Pruebas para Adquisición, FFT, Cuantización y NQS
+│   ├── test_fase1.py                      # Pruebas para Adquisición, FFT, Cuantización y NQS
+│   ├── test_modulation.py                 # Pruebas para Modulación Analógica y Digital
+│   └── test_demodulation.py               # Pruebas para Demodulación AM, FM y Digital
 │
 ├── fase1_demo.py                          # Script ejecutable de demostración y entrega Fase 1
+├── fase2_demo.py                          # Script ejecutable de demostración y entrega Fase 2
+├── fase3_demo.py                          # Script ejecutable de demostración y entrega Fase 3
 ├── requirements.txt                       # Dependencias mínimas (numpy, scipy, matplotlib)
 ├── .gitignore                             # Filtro de exclusión para Git
 ├── CONTRIBUTING.md                        # Protocolo de ramas, commits y Pull Requests
@@ -73,7 +77,7 @@ Proyecto_Comunicaciones_DSP/
 | :---: | :--- | :---: | :---: |
 | **Fase 1** | **Adquisición WAV, Análisis Temporal/FFT, Criterio NQS y Digitalización PCM [Byte/Bit]** | **Líder Técnico (Usuario)** | **COMPLETADA** |
 | **Fase 2** | **Modulación Pasabanda (AM, FM, ASK, FSK, BPSK, QAM) y Escucha de Señal Modulada** | **Colaborador 1** | *Listo para iniciar* |
-| **Fase 3** | **Demodulación, Detector Coherente / Envolvente y Recuperación Auditiva** | **Colaborador 2** | *Listo para iniciar* |
+| **Fase 3** | **Demodulación, Detector Coherente / Envolvente y Recuperación Auditiva** | **Colaborador 2** | **COMPLETADA** |
 | **Fase 4** | **Reconstrucción DAC (Sinc / ZOH), Exportación de WAV y Métricas (MSE, SNR, Pearson)** | **Colaborador 3** | *Listo para iniciar* |
 | **Fase 5** | **Orquestación CLI Integral, Pruebas End-to-End y Driver para Interfaz Gráfica (GUI)** | **Colaborador 4** | *Listo para iniciar* |
 
@@ -124,6 +128,22 @@ python fase1_demo.py --duration 3.5 --bits 8 --play
 python fase1_demo.py --audio mi_voz.wav --bits 4
 ```
 
+### 4. Ejecutar la Fase 3 en Producción
+Para correr la demodulación analógica (AM coherente, envolvente Hilbert y FM) y digital (ASK y FSK por correlación de símbolo) con generación de gráficas y audios recuperados:
+```bash
+# Ejecutar pipeline completo de demodulación (AM, FM, FSK y ASK)
+python fase3_demo.py
+
+# Demodular AM en modo coherente y reproducir el audio recuperado:
+python fase3_demo.py --mode coherent --play
+
+# Demodular AM mediante detector de envolvente (Hilbert) y reproducir:
+python fase3_demo.py --mode envelope --play
+
+# Demodular tramas digitales FSK y ASK evaluando BER:
+python fase3_demo.py --mode digital
+```
+
 ---
 
 ## Fundamento Matemático Implementado en Fase 1
@@ -148,6 +168,22 @@ $$x_q[n] = V_{min} + q[n] \cdot \Delta$$
 
 El error de cuantización $e[n] = x[n] - x_q[n]$ está acotado estrictamente en $[-\Delta/2, +\Delta/2]$, con una relación señal a ruido de cuantización teórica (Bennett):
 $$\text{SQNR}_{teorico} \approx 6.02 \cdot b + 1.76 \text{ dB}$$
+
+---
+
+## Fundamento Matemático Implementado en Fase 3
+
+### 1. Demodulación Analógica AM
+- **Modo Coherente / Síncrono:** Multiplicación por portadora local en fase seguida de un filtro Butterworth paso-bajo de orden $N \in [4, 6]$ con frecuencia de corte $f_c \approx 3.5\text{ kHz}$ y filtrado de fase cero:
+  $$v(t) = 2 \, s_{AM}(t) \cos(2\pi f_c t) = [A_c + m(t)] + [A_c + m(t)]\cos(4\pi f_c t)$$
+  $$\hat{m}(t) = \text{LPF}\{v(t)\} - \mathbb{E}[\text{LPF}\{v(t)\}]$$
+- **Detector de Envolvente (Hilbert):** Cálculo de la señal analítica compleja $z(t) = s_{AM}(t) + j\mathcal{H}\{s_{AM}(t)\}$, extracción de magnitud instantánea y eliminación del nivel DC de portadora:
+  $$A(t) = |z(t)| = \sqrt{s_{AM}^2(t) + \mathcal{H}\{s_{AM}(t)\}^2}, \quad \hat{m}(t) = A(t) - \mathbb{E}[A(t)]$$
+
+### 2. Demodulación Digital (ASK / FSK / BPSK)
+Integración y correlación por período de símbolo $T_b$ ($N$ muestras por símbolo) y comparador de umbral $\gamma$:
+- **ASK / BPSK:** Correlación con portadora de referencia $r_k = \frac{2}{N}\sum_{n=0}^{N-1} s_k[n]\cos(2\pi f_c t_n)$ y decisión $\hat{b}_k = 1 \text{ si } r_k \ge \gamma$.
+- **FSK:** Correlación en cuadratura sobre las frecuencias $f_1$ y $f_0$, decidiendo mediante $r_k = \sqrt{I_{1,k}^2 + Q_{1,k}^2} - \sqrt{I_{0,k}^2 + Q_{0,k}^2} \gtrless 0$.
 
 ---
 
