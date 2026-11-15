@@ -1,0 +1,127 @@
+{
+  "project": {
+    "title": "Cadena Integral de Comunicaciones: Audio DSP",
+    "subtitle": "Muestreo Nyquist, Cuantización PCM, Modulación AM/FM/FSK, Demodulación y Reconstrucción DAC",
+    "institution": "Universidad Tecnológica de Pereira (UTP)",
+    "course": "Comunicaciones I",
+    "author": "Camilo & Equipo DSP",
+    "version": "1.0.0"
+  },
+  "fase1": {
+    "audio": {
+      "duration_s": 3.0,
+      "sample_rate_hz": 16000,
+      "num_samples": 48000,
+      "peak_amplitude": 0.8499,
+      "rms_voltage": 0.2113,
+      "crest_factor": 4.02,
+      "dynamic_range_db": 12.09,
+      "f_max_effective_hz": 1376.3,
+      "nyquist_min_rate_hz": 2752.7,
+      "nyquist_margin_hz": 13247.3,
+      "nyquist_satisfied": true,
+      "nyquist_verdict": "Cumplido (fs > 2·f_max)"
+    },
+    "sampling_pcm": {
+      "downsampled_rate_hz": 8000,
+      "downsampled_samples": 24000,
+      "bits_per_sample": 8,
+      "quantization_levels": 256,
+      "step_size_delta": 0.00784,
+      "sqnr_empirical_db": 38.63,
+      "sqnr_theoretical_db": 49.92,
+      "total_bytes": 48000,
+      "first_64_bits": "0111111101111111011111110111111101111111011111110111111101111111",
+      "first_bytes_hex": "7F 7F 7F 7F 7F 7F 7F 7F 7F 7F 7F 7F 7F 7F 7F 7F"
+    }
+  },
+  "fase2": {
+    "am": {
+      "carrier_freq_hz": 3000.0,
+      "modulation_index_mu": 0.8,
+      "carrier_power_w": 0.5644,
+      "sideband_power_w": 0.0223,
+      "efficiency_percent": 3.8
+    },
+    "fm": {
+      "carrier_freq_hz": 3500.0,
+      "freq_deviation_hz": 1200.0,
+      "beta": 0.87,
+      "regime": "WBFM",
+      "carson_bw_hz": 5152.7,
+      "inst_freq_min_hz": 2300.0,
+      "inst_freq_max_hz": 4672.6
+    },
+    "fsk": {
+      "scheme": "CPFSK (Fase Continua)",
+      "f0_hz": 1800.0,
+      "f1_hz": 3200.0,
+      "bit_rate_bps": 2000.0,
+      "samples_per_symbol": 16,
+      "total_bits_modulated": 384000
+    }
+  },
+  "fase3": {
+    "am_coherent": {
+      "pearson_corr": 0.9961,
+      "snr_db": 15.12
+    },
+    "am_envelope": {
+      "pearson_corr": 0.9967,
+      "snr_db": 14.4
+    },
+    "fm_discriminator": {
+      "pearson_corr": 0.9971,
+      "snr_db": 14.4
+    },
+    "fsk_digital": {
+      "total_bits": 384000,
+      "bit_errors": 0,
+      "ber": 0.0,
+      "ber_display": "0.000000 (100% Recuperación)"
+    }
+  },
+  "fase4_5": {
+    "dac_sinc": {
+      "method": "Whittaker-Shannon (Kernel Sinc)",
+      "output_rate_hz": 16000,
+      "mse": 0.0006121167098172009,
+      "snr_db": 18.629,
+      "psnr_db": 32.132,
+      "pearson_corr": 0.999932,
+      "spectral_distortion_db": 5.668
+    },
+    "dac_zoh": {
+      "method": "Retenedor de Orden Cero (ZOH)",
+      "output_rate_hz": 16000,
+      "mse": 0.0006121167098172009,
+      "snr_db": 18.629,
+      "psnr_db": 32.132,
+      "pearson_corr": 0.999932,
+      "spectral_distortion_db": 5.668
+    }
+  },
+  "assets": {
+    "wav_original": "/demo/voz_original.wav",
+    "wav_mod_am": "/demo/modulada_am.wav",
+    "wav_mod_fm": "/demo/modulada_fm.wav",
+    "wav_mod_fsk": "/demo/modulada_fsk.wav",
+    "wav_demod_am_coherent": "/demo/demodulada_am_coherente.wav",
+    "wav_demod_am_envelope": "/demo/demodulada_am_envolvente.wav",
+    "wav_demod_fm": "/demo/demodulada_fm.wav",
+    "wav_reconstructed_sinc": "/demo/pipeline_audio_reconstruido.wav",
+    "fig_time_spectrum": "/demo/01_analisis_temporal_espectral.png",
+    "fig_nqs": "/demo/02_estudio_muestreo_nqs.png",
+    "fig_quantization": "/demo/03_cuantizacion_8bits_ruido.png",
+    "fig_mod_am": "/demo/04_modulacion_am_espectro.png",
+    "fig_mod_fm": "/demo/05_modulacion_fm_espectro.png",
+    "fig_mod_fsk": "/demo/06_modulacion_digital_fsk.png",
+    "fig_spectrum_translation": "/demo/07_traslacion_espectral_am.png",
+    "fig_demod_am": "/demo/08_demodulacion_am_coherente.png",
+    "fig_am_modes": "/demo/09_comparativa_modos_am_coherente_vs_envolvente.png",
+    "fig_demod_fsk": "/demo/10_demodulacion_digital_fsk_correlacion.png",
+    "fig_fidelity_comparison": "/demo/pipeline_comparacion_fidelidad.png",
+    "bin_stream": "/demo/trama_digital_8bits.bin",
+    "json_metadata": "/demo/trama_digital_8bits_metadata.json"
+  }
+}

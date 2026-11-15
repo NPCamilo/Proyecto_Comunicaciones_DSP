@@ -358,6 +358,10 @@ def modulate_and_demodulate(input_data: Any,
             "Debe inyectar simultáneamente un BaseModulator y un BaseDemodulator."
         )
 
+    if isinstance(input_data, DigitalStream):
+        kwargs.setdefault("reference_stream", input_data)
+        kwargs.setdefault("bits_per_sample", input_data.bits_per_sample)
+
     modulated = _invoke_modulator(
         modulator, input_data, float(carrier_freq), kwargs
     )
@@ -485,7 +489,8 @@ def run_dsp_pipeline(wav_path: Optional[str] = None,
                      save_artifacts: bool = True,
                      reconstructor: Optional[AudioReconstructor] = None,
                      seed: Optional[int] = None,
-                     progress_callback: Optional[ProgressCallback] = None
+                     progress_callback: Optional[ProgressCallback] = None,
+                     **kwargs
                      ) -> PipelineResult:
     """
     Orquesta la cadena DSP completa de extremo a extremo.
@@ -550,6 +555,7 @@ def run_dsp_pipeline(wav_path: Optional[str] = None,
             demodulator=demodulator,
             carrier_freq=carrier_freq,
             progress_callback=progress_callback,
+            **kwargs
         )
 
     demodulated = (
@@ -680,6 +686,24 @@ def main(argv: Optional[list] = None) -> int:
         "--no-save", action="store_true",
         help="No exporta WAV, bitstream ni gráficas a disco."
     )
+    parser.add_argument(
+        "--modulation", dest="modulation_scheme", type=str, default="none",
+        choices=("none", "am", "fm", "fsk", "ask", "bpsk"),
+        help="Esquema de modulación/demodulación: none, am, fm, fsk, ask, bpsk (default: none)."
+    )
+    parser.add_argument(
+        "--carrier-freq", dest="carrier_freq", type=float, default=3000.0,
+        help="Frecuencia portadora central en Hz (default: 3000.0)."
+    )
+    parser.add_argument(
+        "--am-mode", dest="am_mode", type=str, default="coherent",
+        choices=("coherent", "envelope"),
+        help="Modo de demodulación AM: coherent o envelope (default: coherent)."
+    )
+    parser.add_argument(
+        "--sps", dest="samples_per_symbol", type=int, default=16,
+        help="Muestras por símbolo para modulación digital (default: 16)."
+    )
 
     args = parser.parse_args(argv)
 
@@ -687,6 +711,43 @@ def main(argv: Optional[list] = None) -> int:
         args.outdir, "pipeline_audio_reconstruido.wav"
     )
     save_artifacts = not args.no_save
+
+    modulator = None
+    demodulator = None
+    mod_input = "audio"
+    scheme = args.modulation_scheme.lower()
+    if scheme != "none":
+        from src.modulation import (
+            AMModulator,
+            FMModulator,
+            DigitalShiftKeyingModulator,
+        )
+        from src.demodulation import (
+            AMDemodulator,
+            FMDemodulator,
+            DigitalShiftKeyingDemodulator,
+        )
+
+        if scheme == "am":
+            modulator = AMModulator(carrier_freq=args.carrier_freq, mod_index=0.8)
+            demodulator = AMDemodulator(method=args.am_mode)
+            mod_input = "sampled_audio"
+        elif scheme == "fm":
+            modulator = FMModulator(carrier_freq=args.carrier_freq, freq_dev=1000.0)
+            demodulator = FMDemodulator()
+            mod_input = "sampled_audio"
+        elif scheme in ("fsk", "ask", "bpsk"):
+            modulator = DigitalShiftKeyingModulator(
+                mod_type=scheme.upper(),
+                carrier_freq=args.carrier_freq,
+                samples_per_symbol=args.samples_per_symbol,
+            )
+            demodulator = DigitalShiftKeyingDemodulator(
+                mod_type=scheme.upper(),
+                carrier_freq=args.carrier_freq,
+                samples_per_symbol=args.samples_per_symbol,
+            )
+            mod_input = "digital"
 
     try:
         result = run_dsp_pipeline(
@@ -699,6 +760,10 @@ def main(argv: Optional[list] = None) -> int:
             source_sample_rate=args.source_sample_rate,
             output_dir=args.outdir,
             target_rate=args.target_rate,
+            modulator=modulator,
+            demodulator=demodulator,
+            carrier_freq=args.carrier_freq,
+            modulation_input=mod_input,
             save_artifacts=save_artifacts,
             progress_callback=progress,
         )
