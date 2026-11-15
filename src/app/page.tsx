@@ -201,7 +201,7 @@ export default function HomePage() {
           <div className="space-y-4 max-w-4xl">
             <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full text-xs font-mono bg-emerald-500/10 border border-emerald-500/20 text-emerald-400">
               <span className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-              <span>TELECOMUNICACIONES & PROCESAMIENTO DIGITAL DE SEÑALES</span>
+              <span>COMUNICACIONES & PROCESAMIENTO DIGITAL DE SEÑALES</span>
             </div>
 
             <h1 className="font-display text-4xl sm:text-5xl lg:text-6xl font-bold tracking-tight text-(--ink) leading-[1.1]">
@@ -214,7 +214,7 @@ export default function HomePage() {
 
             <div className="flex flex-wrap items-center gap-3 pt-2 text-xs font-mono text-(--ink-muted)">
               <span className="px-2.5 py-1 rounded-lg bg-(--surface) border border-(--hairline)">
-                UTP · Ingeniería Electrónica / Sistemas
+                UTP · Ingeniería de Sistemas y Computación
               </span>
               <span className="px-2.5 py-1 rounded-lg bg-(--surface) border border-(--hairline)">
                 SNR Sinc: +26.97 dB
@@ -327,7 +327,7 @@ export default function HomePage() {
               UTP · COMUNICACIONES I · 2026
             </span>
             <span className="hidden sm:inline">·</span>
-            <span>Ingeniería Electrónica / Sistemas</span>
+            <span>Ingeniería de Sistemas y Computación</span>
           </div>
 
           <div className="flex items-center gap-6">

@@ -204,7 +204,7 @@ export default function LiveAudioTransceiver() {
           <div className="p-6 rounded-2xl border border-(--hairline) bg-(--surface-elevated) space-y-5">
             <span className="font-mono text-xs uppercase tracking-wider text-(--ink-muted) flex items-center gap-2">
               <Sliders className="w-4 h-4 text-blue-400" />
-              Parámetros de Telecomunicaciones DSP
+              Parámetros de Comunicaciones DSP
             </span>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
