@@ -81,11 +81,11 @@ export default function HomePage() {
       {/* Dynamic ASCII Acoustic Background Matrix */}
       <AsciiAcousticBackdrop active={asciiActive} theme={theme} />
 
-      {/* Atmospheric Ambient Radial Glows */}
+      {/* Atmospheric Ambient Radial Glows (Azul Celeste & Verde Menta) */}
       <div className="pointer-events-none fixed inset-0 z-0 overflow-hidden opacity-40 dark:opacity-25">
-        <div className="absolute -top-[20%] left-[10%] h-[600px] w-[600px] rounded-full bg-sky-500/10 blur-[130px]" />
-        <div className="absolute top-[40%] -right-[15%] h-[700px] w-[700px] rounded-full bg-emerald-500/10 blur-[150px]" />
-        <div className="absolute bottom-[10%] left-[20%] h-[500px] w-[500px] rounded-full bg-purple-500/10 blur-[120px]" />
+        <div className="absolute -top-[20%] left-[10%] h-[600px] w-[600px] rounded-full bg-sky-500/12 blur-[130px]" />
+        <div className="absolute top-[40%] -right-[15%] h-[700px] w-[700px] rounded-full bg-emerald-400/12 blur-[150px]" />
+        <div className="absolute bottom-[10%] left-[20%] h-[500px] w-[500px] rounded-full bg-teal-500/10 blur-[120px]" />
       </div>
 
       {/* Telemetry Drawer Modal */}

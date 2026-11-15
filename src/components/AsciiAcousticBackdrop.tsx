@@ -9,14 +9,26 @@ interface AsciiAcousticBackdropProps {
 
 const ACOUSTIC_RAMP = " ·:-=+*#%@";
 
+// Paleta cromática interactiva: Fusión armónica entre Azul Celeste (#38bdf8, Voz Original)
+// y Verde Menta (#34d399, Reconstrucción Sinc DAC)
 const DARK_PALETTE = Array.from({ length: ACOUSTIC_RAMP.length }, (_, idx) => {
-  const alpha = (0.05 + (idx / ACOUSTIC_RAMP.length) * 0.15).toFixed(3);
-  return `rgba(161, 161, 170, ${alpha})`;
+  const t = idx / (ACOUSTIC_RAMP.length - 1);
+  // Lerp de Azul Celeste rgb(56, 189, 248) hacia Verde Menta rgb(52, 211, 153)
+  const r = Math.round(56 + (52 - 56) * t);
+  const g = Math.round(189 + (211 - 189) * t);
+  const b = Math.round(248 + (153 - 248) * t);
+  const alpha = (0.08 + t * 0.28).toFixed(3);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 });
 
 const LIGHT_PALETTE = Array.from({ length: ACOUSTIC_RAMP.length }, (_, idx) => {
-  const alpha = (0.05 + (idx / ACOUSTIC_RAMP.length) * 0.14).toFixed(3);
-  return `rgba(24, 24, 27, ${alpha})`;
+  const t = idx / (ACOUSTIC_RAMP.length - 1);
+  // Lerp para modo claro de Azul Océano rgb(2, 132, 199) a Verde Menta rgb(5, 150, 105)
+  const r = Math.round(2 + (5 - 2) * t);
+  const g = Math.round(132 + (150 - 132) * t);
+  const b = Math.round(199 + (105 - 199) * t);
+  const alpha = (0.10 + t * 0.30).toFixed(3);
+  return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 });
 
 export function AsciiAcousticBackdrop({
@@ -32,10 +44,12 @@ export function AsciiAcousticBackdrop({
     if (!ctx) return;
 
     const palette = theme === "dark" ? DARK_PALETTE : LIGHT_PALETTE;
-    const resonantColor =
-      theme === "dark" ? "rgba(56, 189, 248, 0.36)" : "rgba(2, 132, 199, 0.36)";
-    const harmonicPeakColor =
-      theme === "dark" ? "rgba(244, 63, 94, 0.24)" : "rgba(225, 29, 72, 0.24)";
+    // Resonancia interactiva al puntero: Azul Celeste Eléctrico
+    const resonantSky =
+      theme === "dark" ? "rgba(56, 189, 248, 0.75)" : "rgba(2, 132, 199, 0.78)";
+    // Cresta armónica máxima: Verde Menta Luminoso
+    const peakMint =
+      theme === "dark" ? "rgba(52, 211, 153, 0.85)" : "rgba(5, 150, 105, 0.88)";
 
     const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
     let animId = 0;
@@ -116,12 +130,18 @@ export function AsciiAcousticBackdrop({
           if (charIdx <= 1) continue;
 
           const ch = ACOUSTIC_RAMP[charIdx];
-          ctx.fillStyle =
-            dist < 260 && charIdx >= 6
-              ? resonantColor
-              : charIdx >= 7
-                ? harmonicPeakColor
-                : palette[charIdx];
+          let fill: string;
+          if (dist < 240 && charIdx >= 5) {
+            // Destello interactivo al paso del puntero en Azul Celeste (#38bdf8)
+            fill = resonantSky;
+          } else if (charIdx >= 7) {
+            // Crestas de alta energía acústica en Verde Menta (#34d399)
+            fill = peakMint;
+          } else {
+            // Gradiente acústico dinámico Celeste -> Menta
+            fill = palette[charIdx];
+          }
+          ctx.fillStyle = fill;
           ctx.fillText(ch, x, y);
         }
       }
@@ -192,20 +212,20 @@ export function AsciiAcousticBackdrop({
         }`}
       />
 
-      {/* Soundwave Atmospheric Ambient Glow Orbs */}
+      {/* Soundwave Atmospheric Ambient Glow Orbs (Azul Celeste & Verde Menta) */}
       <div
         className={`absolute -left-32 -top-40 h-[520px] w-[520px] rounded-full blur-[130px] ${
-          theme === "dark" ? "bg-sky-500/12" : "bg-sky-500/10"
+          theme === "dark" ? "bg-sky-400/16" : "bg-sky-500/10"
         }`}
       />
       <div
         className={`absolute -right-24 top-16 h-[460px] w-[460px] rounded-full blur-[140px] ${
-          theme === "dark" ? "bg-amber-500/10" : "bg-amber-500/8"
+          theme === "dark" ? "bg-emerald-400/14" : "bg-emerald-500/10"
         }`}
       />
       <div
         className={`absolute bottom-0 left-1/3 h-[380px] w-[560px] rounded-full blur-[140px] ${
-          theme === "dark" ? "bg-emerald-500/8" : "bg-emerald-500/8"
+          theme === "dark" ? "bg-teal-400/12" : "bg-teal-500/8"
         }`}
       />
 
