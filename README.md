@@ -76,7 +76,7 @@ Proyecto_Comunicaciones_DSP/
 | Fase | Título y Enfoque Técnico | Responsable | Estado |
 | :---: | :--- | :---: | :---: |
 | **Fase 1** | **Adquisición WAV, Análisis Temporal/FFT, Criterio NQS y Digitalización PCM [Byte/Bit]** | **Líder Técnico (Usuario)** | **COMPLETADA** |
-| **Fase 2** | **Modulación Pasabanda (AM, FM, ASK, FSK, BPSK, QAM) y Escucha de Señal Modulada** | **Colaborador 1** | *Listo para iniciar* |
+| **Fase 2** | **Modulación Pasabanda (AM, FM, ASK, FSK, BPSK, QAM) y Escucha de Señal Modulada** | **Colaborador 1** | **COMPLETADA** |
 | **Fase 3** | **Demodulación, Detector Coherente / Envolvente y Recuperación Auditiva** | **Colaborador 2** | **COMPLETADA** |
 | **Fase 4** | **Reconstrucción DAC (Sinc / ZOH), Exportación de WAV y Métricas (MSE, SNR, Pearson)** | **Colaborador 3** | *Listo para iniciar* |
 | **Fase 5** | **Orquestación CLI Integral, Pruebas End-to-End y Driver para Interfaz Gráfica (GUI)** | **Colaborador 4** | *Listo para iniciar* |
