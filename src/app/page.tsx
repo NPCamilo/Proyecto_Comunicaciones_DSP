@@ -65,9 +65,9 @@ export default function HomePage() {
     updateColorSchemeMeta(nextTheme);
   };
 
-  // Fetch demo data
+  // Fetch demo data with cache busting
   useEffect(() => {
-    fetch('/demo/datos_demo.json')
+    fetch(`/demo/datos_demo.json?t=${Date.now()}`, { cache: 'no-store' })
       .then((res) => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();
@@ -80,7 +80,7 @@ export default function HomePage() {
       .catch((err) => {
         console.warn('Fallback: Error al cargar datos_demo.json local:', err);
         // Fallback to API if available
-        fetch('/api/audio/demo')
+        fetch(`/api/audio/demo?t=${Date.now()}`, { cache: 'no-store' })
           .then((r) => r.json())
           .then((d) => setDemoData(d))
           .catch((apiErr) => {
@@ -260,6 +260,7 @@ export default function HomePage() {
                 sqnrDb={demoData.fase1.sampling_pcm.sqnr_empirical_db}
                 sampleRate={demoData.fase1.audio.sample_rate_hz}
                 durationSec={demoData.fase1.audio.duration_s}
+                realWaveforms={demoData.hero_waveforms}
               />
             </div>
           )}

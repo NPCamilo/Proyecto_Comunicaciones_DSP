@@ -122,6 +122,13 @@ export interface DemoAssets {
   json_metadata: string;
 }
 
+export interface HeroWaveformData {
+  macro_orig: number[];
+  macro_rec: number[];
+  transient_orig: number[];
+  transient_rec: number[];
+}
+
 export interface DemoData {
   project: ProjectMeta;
   fase1: {
@@ -132,6 +139,7 @@ export interface DemoData {
   fase3: Fase3DemodulationData;
   fase4_5: Fase45Data;
   assets: DemoAssets;
+  hero_waveforms?: HeroWaveformData;
 }
 
 export interface LiveAudioProcessResponse {

@@ -90,10 +90,12 @@ def generate_canonical_demo_data():
     bits_pcm = 8
     q_res = quantize_signal(signal, bits_per_sample=bits_pcm)
 
-    # Gráficas científicas Fase 1
+    # Gráficas científicas Fase 1 (se guardan también con sufijo _v2 para forzar invalidación de caché CDN)
     print("[Fase 1] Generando gráficas de espectro, estudio NQS y cuantización...")
     plot_time_and_frequency(signal, save_path=str(out_dir / "01_analisis_temporal_espectral.png"), show=False)
+    plot_sampling_nqs_study(signal, save_path=str(out_dir / "02_estudio_muestreo_nqs_v2.png"), show=False)
     plot_sampling_nqs_study(signal, save_path=str(out_dir / "02_estudio_muestreo_nqs.png"), show=False)
+    plot_quantization_analysis(signal, q_res, save_path=str(out_dir / "03_cuantizacion_8bits_ruido_v2.png"), show=False)
     plot_quantization_analysis(signal, q_res, save_path=str(out_dir / "03_cuantizacion_8bits_ruido.png"), show=False)
 
     # Identificar ventana de fonema activo para extraer trama representativa (evita silencios planos 0x7F)
@@ -284,7 +286,27 @@ def generate_canonical_demo_data():
         }
     }
 
-    # 5. Mapeo de artefactos para consumo frontend
+    # 5. Formas de onda acústicas reales para el Hero Comparator A/B (140 puntos reales)
+    N_points = 140
+    step_macro = len(signal.samples) / N_points
+    indices_macro = [int(i * step_macro) for i in range(N_points)]
+    macro_orig = [round(float(signal.samples[idx]), 4) for idx in indices_macro]
+    macro_rec = [round(float(reconstructed_sinc.samples[idx]), 4) for idx in indices_macro]
+
+    # Transiente real (20 ms en segmento vocal activo)
+    window_samples_trans = int(signal.sample_rate * 0.020)
+    indices_trans = np.linspace(best_start_idx, best_start_idx + window_samples_trans, N_points, dtype=int)
+    trans_orig = [round(float(signal.samples[idx]), 4) for idx in indices_trans]
+    trans_rec = [round(float(reconstructed_sinc.samples[idx]), 4) for idx in indices_trans]
+
+    hero_waveforms = {
+        "macro_orig": macro_orig,
+        "macro_rec": macro_rec,
+        "transient_orig": trans_orig,
+        "transient_rec": trans_rec,
+    }
+
+    # 6. Mapeo de artefactos para consumo frontend (figuras con sufijo _v2 para bypass de CDN cache)
     assets = {
         # Audio tracks
         "wav_original": "/demo/voz_original.wav",
@@ -297,8 +319,8 @@ def generate_canonical_demo_data():
         "wav_reconstructed_sinc": "/demo/pipeline_audio_reconstruido.wav",
         # Figures (PNG with automatic WebP alternative)
         "fig_time_spectrum": "/demo/01_analisis_temporal_espectral.png",
-        "fig_nqs": "/demo/02_estudio_muestreo_nqs.png",
-        "fig_quantization": "/demo/03_cuantizacion_8bits_ruido.png",
+        "fig_nqs": "/demo/02_estudio_muestreo_nqs_v2.png",
+        "fig_quantization": "/demo/03_cuantizacion_8bits_ruido_v2.png",
         "fig_mod_am": "/demo/04_modulacion_am_espectro.png",
         "fig_mod_fm": "/demo/05_modulacion_fm_espectro.png",
         "fig_mod_fsk": "/demo/06_modulacion_digital_fsk.png",
@@ -326,6 +348,7 @@ def generate_canonical_demo_data():
         "fase3": fase3_data,
         "fase4_5": fase4_5_data,
         "assets": assets,
+        "hero_waveforms": hero_waveforms,
     }
 
     json_path = out_dir / "datos_demo.json"

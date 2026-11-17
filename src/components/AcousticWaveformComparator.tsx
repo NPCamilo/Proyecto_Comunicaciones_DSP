@@ -13,6 +13,12 @@ interface AcousticWaveformComparatorProps {
   sampleRate: number;
   durationSec: number;
   onInspectImage?: (src: string, title: string, caption?: string) => void;
+  realWaveforms?: {
+    macro_orig: number[];
+    macro_rec: number[];
+    transient_orig: number[];
+    transient_rec: number[];
+  };
 }
 
 type ViewMode = "waveform" | "transient";
@@ -67,6 +73,7 @@ export function AcousticWaveformComparator({
   sqnrDb,
   sampleRate,
   durationSec,
+  realWaveforms,
 }: AcousticWaveformComparatorProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("waveform");
   const [sweeping, setSweeping] = useState(false);
@@ -100,8 +107,19 @@ export function AcousticWaveformComparator({
   const originalWaveTransient = useMemo(() => generateTransientProfile(wavePoints, false), []);
   const reconstructedWaveTransient = useMemo(() => generateTransientProfile(wavePoints, true), []);
 
-  const activeOrigWave = viewMode === "transient" ? originalWaveTransient : originalWaveMacro;
-  const activeRecWave = viewMode === "transient" ? reconstructedWaveTransient : reconstructedWaveMacro;
+  const activeOrigWave = useMemo(() => {
+    if (viewMode === "transient") {
+      return realWaveforms?.transient_orig?.length ? realWaveforms.transient_orig : originalWaveTransient;
+    }
+    return realWaveforms?.macro_orig?.length ? realWaveforms.macro_orig : originalWaveMacro;
+  }, [viewMode, realWaveforms, originalWaveTransient, originalWaveMacro]);
+
+  const activeRecWave = useMemo(() => {
+    if (viewMode === "transient") {
+      return realWaveforms?.transient_rec?.length ? realWaveforms.transient_rec : reconstructedWaveTransient;
+    }
+    return realWaveforms?.macro_rec?.length ? realWaveforms.macro_rec : reconstructedWaveMacro;
+  }, [viewMode, realWaveforms, reconstructedWaveTransient, reconstructedWaveMacro]);
 
   const applyVars = useCallback(() => {
     const s = stateRef.current;
