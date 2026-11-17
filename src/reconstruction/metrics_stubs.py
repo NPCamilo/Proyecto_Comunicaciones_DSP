@@ -139,9 +139,8 @@ class AudioReconstructor(BaseReconstructor):
             held = self._zoh_interpolate(raw_samples, fs, out_rate)
             smoothed = self._smooth_with_butterworth(held)
 
-        peak = float(np.max(np.abs(smoothed))) if len(smoothed) else 0.0
-        peak = peak or 1.0
-        norm_samples = (smoothed / peak * 0.95).astype(np.float32)
+        # Conservar escala de cuantización real sin distorsión de ganancia arbitraria
+        norm_samples = np.clip(smoothed, -1.0, 1.0).astype(np.float32)
 
         return AudioSignal(
             samples=norm_samples,

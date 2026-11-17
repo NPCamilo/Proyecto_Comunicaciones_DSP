@@ -167,7 +167,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
               </button>
             </div>
             <div className="flex items-center justify-between px-3 pt-3 text-xs font-mono text-(--ink-muted)">
-              <span>Figura 01: Dominio Temporal y Espectro FFT (Voz Original)</span>
+              <span>Figura 01: Dominio Temporal y Espectro FFT (Billie Bossa Nova)</span>
               <span>fs: {(fase1.audio.sample_rate_hz / 1000).toFixed(1)} kHz</span>
             </div>
           </div>

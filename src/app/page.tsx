@@ -230,7 +230,7 @@ export default function HomePage() {
                 UTP · Ingeniería de Sistemas y Computación
               </span>
               <span className="px-2.5 py-1 rounded-lg bg-(--surface) border border-(--hairline)">
-                SNR Sinc: +26.97 dB
+                SNR Sinc: +{demoData ? demoData.fase4_5.dac_sinc.snr_db.toFixed(2) : '39.95'} dB
               </span>
               <span className="px-2.5 py-1 rounded-lg bg-(--surface) border border-(--hairline)">
                 BER Digital: 0.000000
