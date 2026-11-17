@@ -23,8 +23,13 @@ ROOT_DIR = Path(__file__).resolve().parent
 sys.path.insert(0, str(ROOT_DIR))
 
 from src.core.audio_io import load_wav, generate_synthetic_speech_phrase, save_wav
-from src.core.analyzer import analyze_signal_properties
-from src.core.quantization import quantize_signal, simulate_sampling_nqs
+from src.core.analyzer import analyze_signal_properties, plot_time_and_frequency
+from src.core.quantization import (
+    quantize_signal,
+    simulate_sampling_nqs,
+    plot_sampling_nqs_study,
+    plot_quantization_analysis,
+)
 from src.modulation import (
     AMModulator,
     FMModulator,
@@ -85,12 +90,30 @@ def generate_canonical_demo_data():
     bits_pcm = 8
     q_res = quantize_signal(signal, bits_per_sample=bits_pcm)
 
-    # Primeros 64 bits y bytes hex
-    bitstream_arr = np.asarray(q_res.bitstream, dtype=np.uint8)
-    first_64_bits = "".join(str(b) for b in bitstream_arr[:64])
+    # Gráficas científicas Fase 1
+    print("[Fase 1] Generando gráficas de espectro, estudio NQS y cuantización...")
+    plot_time_and_frequency(signal, save_path=str(out_dir / "01_analisis_temporal_espectral.png"), show=False)
+    plot_sampling_nqs_study(signal, save_path=str(out_dir / "02_estudio_muestreo_nqs.png"), show=False)
+    plot_quantization_analysis(signal, q_res, save_path=str(out_dir / "03_cuantizacion_8bits_ruido.png"), show=False)
+
+    # Identificar ventana de fonema activo para extraer trama representativa (evita silencios planos 0x7F)
+    window_samples = max(10, int(signal.sample_rate * 0.020))
+    step_search = max(1, int(signal.sample_rate * 0.005))
+    abs_samples = np.abs(signal.samples)
+    if len(abs_samples) > window_samples:
+        energies = [np.mean(abs_samples[i:i + window_samples])
+                    for i in range(0, len(abs_samples) - window_samples, step_search)]
+        best_start_idx = int(np.argmax(energies)) * step_search if len(energies) > 0 else 0
+    else:
+        best_start_idx = 0
+
     packed_bytes = q_res.to_bytes()
-    first_hex = " ".join(f"{b:02X}" for b in packed_bytes[:16])
+    active_bytes = packed_bytes[best_start_idx:best_start_idx + 16]
+    first_hex = " ".join(f"{b:02X}" for b in active_bytes)
+    first_64_bits = "".join(f"{b:08b}" for b in active_bytes[:8])
     step_delta = (q_res.v_max - q_res.v_min) / (2 ** bits_pcm - 1)
+
+    bitstream_arr = np.asarray(q_res.bitstream, dtype=np.uint8)
 
     fase1_data = {
         "audio": {

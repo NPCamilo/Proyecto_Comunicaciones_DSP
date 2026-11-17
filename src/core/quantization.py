@@ -217,7 +217,9 @@ def plot_sampling_nqs_study(signal: AudioSignal, save_path: Optional[str] = None
 
     # Ventana de visualización microscópica (20 ms en segmento de voz activo para apreciar
     # las muestras discretas sin caer en silencios iniciales planos en 0.00 V).
-    window_samples = max(10, int(signal.sample_rate * 0.020))
+    zoom_ms = 20.0
+    zoom_s = zoom_ms / 1000.0
+    window_samples = max(10, int(signal.sample_rate * zoom_s))
     step_search = max(1, int(signal.sample_rate * 0.005))
     abs_samples = np.abs(signal.samples)
     if len(abs_samples) > window_samples:
@@ -228,7 +230,6 @@ def plot_sampling_nqs_study(signal: AudioSignal, save_path: Optional[str] = None
         best_start_idx = 0
 
     t_start = float(signal.time_vector[best_start_idx])
-    zoom_s = 0.020  # 20 ms
     t_end = t_start + zoom_s
 
     mask_orig = (signal.time_vector >= t_start) & (signal.time_vector <= t_end)
@@ -238,17 +239,21 @@ def plot_sampling_nqs_study(signal: AudioSignal, save_path: Optional[str] = None
     fig, axes = plt.subplots(3, 1, figsize=(11, 9), constrained_layout=True)
     fig.patch.set_facecolor('#0d1117')
 
-    t_orig_rel = (signal.time_vector[mask_orig] - t_start) * 1000.0
+    t_orig_rel = (signal.time_vector[mask_orig] - t_start) * 1000.0  # en ms
     x_orig_win = signal.samples[mask_orig]
+    t_nyq_rel = (t_sub_nyq[mask_nyq] - t_start) * 1000.0  # en ms
+    x_nyq_win = x_sub_nyq[mask_nyq]
+    t_alias_rel = (t_sub_alias[mask_alias] - t_start) * 1000.0  # en ms
+    x_alias_win = x_sub_alias[mask_alias]
 
     configs = [
         (axes[0], t_orig_rel, x_orig_win, '#58a6ff',
          f"1. Sobremuestreo (Señal Continua Original: fs = {fs_orig:,} Hz >> 2·f_max)",
          'Señal Continua x(t) (Sin Aliasing)'),
-        (axes[1], (t_sub_nyq[mask_nyq] - t_start) * 1000.0, x_sub_nyq[mask_nyq], '#d29922',
+        (axes[1], t_nyq_rel, x_nyq_win, '#d29922',
          f"2. Muestreo en Rango de Nyquist (fs' = {fs_nyq:,} Hz ≈ 2·f_max)",
          f"Muestras Discretas x[n] (Ts = {1000.0/fs_nyq:.2f} ms, Criterio Cumplido)"),
-        (axes[2], (t_sub_alias[mask_alias] - t_start) * 1000.0, x_sub_alias[mask_alias], '#f85149',
+        (axes[2], t_alias_rel, x_alias_win, '#f85149',
          f"3. Submuestreo Severo / Violación NQS (fs'' = {fs_alias:,} Hz << 2·f_max) -> ALIASING",
          f"Muestras Discretas (Ts = {1000.0/fs_alias:.2f} ms, Distorsión Irreversible)")
     ]
@@ -265,21 +270,21 @@ def plot_sampling_nqs_study(signal: AudioSignal, save_path: Optional[str] = None
                 color='#8b949e', linewidth=0.8, alpha=0.4, label='x(t) Original')
 
         if ax == axes[0]:
-            ax.plot(t_plot * 1000.0, x_plot, color=color, linewidth=1.5, label=label_text)
+            ax.plot(t_plot, x_plot, color=color, linewidth=1.5, label=label_text)
         else:
             # Stem plot para representar impulsos discretos
             markerline, stemlines, baseline = ax.stem(
-                t_plot * 1000.0, x_plot,
+                t_plot, x_plot,
                 linefmt='-', markerfmt='o', basefmt='-'
             )
             plt.setp(stemlines, color=color, linewidth=1.2)
             plt.setp(markerline, color=color, markersize=5)
             plt.setp(baseline, color='#30363d', linewidth=0.8)
             # Línea discontinua interpolada
-            ax.plot(t_plot * 1000.0, x_plot, color=color, linestyle=':', alpha=0.7, label='Envolvente Muestreada')
+            ax.plot(t_plot, x_plot, color=color, linestyle=':', alpha=0.7, label='Envolvente Muestreada')
 
         ax.set_title(title, color='#f0f6fc', fontsize=11, fontweight='bold', pad=8)
-        ax.set_xlabel("Tiempo [milisegundos]", color='#c9d1d9', fontsize=9)
+        ax.set_xlabel("Tiempo relativo en segmento activo [ms]", color='#c9d1d9', fontsize=9)
         ax.set_ylabel("Amplitud [-1.0, 1.0]", color='#c9d1d9', fontsize=9)
         ax.set_xlim(0, zoom_ms)
         ax.set_ylim(-1.05, 1.05)
