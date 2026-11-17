@@ -37,8 +37,8 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         id: 'track-1-orig',
         code: 'CH 01',
         title: 'Billie Bossa Nova (Original)',
-        subtitle: `Entrada Acústica · fs = ${(fase1.audio.sample_rate_hz / 1000).toFixed(1)} kHz`,
-        src: assets.wav_original,
+        subtitle: `Entrada Acústica · fs = ${(fase1.audio.sample_rate_hz / 1000).toFixed(1)} kHz · 8.0 s`,
+        src: `${assets.wav_original}?v=1.2`,
         accentClass: 'text-sky-400',
       },
       {
@@ -46,7 +46,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 02',
         title: 'Modulación AM-FC (TX)',
         subtitle: `Portadora fc = ${(fase2.am.carrier_freq_hz / 1000).toFixed(1)} kHz · μ = ${fase2.am.modulation_index_mu.toFixed(2)}`,
-        src: assets.wav_mod_am,
+        src: `${assets.wav_mod_am}?v=1.2`,
         accentClass: 'text-amber-400',
       },
       {
@@ -54,7 +54,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 03',
         title: 'Modulación FM-WBFM (TX)',
         subtitle: `Portadora fc = ${(fase2.fm.carrier_freq_hz / 1000).toFixed(1)} kHz · β = ${fase2.fm.beta.toFixed(2)}`,
-        src: assets.wav_mod_fm,
+        src: `${assets.wav_mod_fm}?v=1.2`,
         accentClass: 'text-purple-400',
       },
       {
@@ -62,15 +62,15 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 04',
         title: 'Modulación Digital 2-FSK (TX)',
         subtitle: `f0 = ${(fase2.fsk.f0_hz / 1000).toFixed(1)} kHz, f1 = ${(fase2.fsk.f1_hz / 1000).toFixed(1)} kHz · ${fase2.fsk.bit_rate_bps.toFixed(0)} bps`,
-        src: assets.wav_mod_fsk,
+        src: `${assets.wav_mod_fsk}?v=1.2`,
         accentClass: 'text-pink-400',
       },
       {
         id: 'track-5-psk-tx',
         code: 'CH 05',
         title: 'Modulación Digital PSK (BPSK)',
-        subtitle: `Portadora fc = ${(fase2.psk?.carrier_freq_hz ?? 2400) / 1000} kHz · Salto de fase 180°`,
-        src: assets.wav_mod_psk || '/demo/modulada_psk.wav',
+        subtitle: `Portadora fc = ${(fase2.psk?.carrier_freq_hz ?? 2000) / 1000} kHz · Salto de fase 180°`,
+        src: `${assets.wav_mod_psk || '/demo/modulada_psk.wav'}?v=1.2`,
         accentClass: 'text-cyan-400',
       },
       {
@@ -78,7 +78,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 06',
         title: 'Demodulación AM Coherente (RX)',
         subtitle: `Receptor sincrónico · SNR = ${fase3.am_coherent.snr_db.toFixed(2)} dB`,
-        src: assets.wav_demod_am_coherent,
+        src: `${assets.wav_demod_am_coherent}?v=1.2`,
         accentClass: 'text-emerald-400',
       },
       {
@@ -86,7 +86,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 07',
         title: 'Demodulación AM Envolvente (RX)',
         subtitle: `Detector pico no lineal · SNR = ${fase3.am_envelope.snr_db.toFixed(2)} dB`,
-        src: assets.wav_demod_am_envelope,
+        src: `${assets.wav_demod_am_envelope}?v=1.2`,
         accentClass: 'text-yellow-400',
       },
       {
@@ -94,7 +94,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 08',
         title: 'Demodulación FM Discriminador (RX)',
         subtitle: `Detector de cruces por cero · SNR = ${fase3.fm_discriminator.snr_db.toFixed(2)} dB`,
-        src: assets.wav_demod_fm,
+        src: `${assets.wav_demod_fm}?v=1.2`,
         accentClass: 'text-indigo-400',
       },
       {
@@ -102,7 +102,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 09',
         title: 'Reconstrucción DAC Sinc Whittaker',
         subtitle: `Salida analógica final · SNR = ${fase4_5.dac_sinc.snr_db.toFixed(2)} dB · r = ${fase4_5.dac_sinc.pearson_corr.toFixed(4)}`,
-        src: assets.wav_reconstructed_sinc,
+        src: `${assets.wav_reconstructed_sinc}?v=1.2`,
         accentClass: 'text-teal-400',
       },
     ],
