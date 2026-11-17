@@ -37,12 +37,24 @@ export default function HomePage() {
   const [telemetryOpen, setTelemetryOpen] = useState<boolean>(false);
   const [, startTransition] = useTransition();
 
+  // Synchronize <meta name="color-scheme"> with theme preference
+  const updateColorSchemeMeta = (targetTheme: 'dark' | 'light') => {
+    let meta = document.querySelector('meta[name="color-scheme"]') as HTMLMetaElement | null;
+    if (!meta) {
+      meta = document.createElement('meta');
+      meta.name = 'color-scheme';
+      document.head.appendChild(meta);
+    }
+    meta.content = targetTheme;
+  };
+
   // Load theme preference
   useEffect(() => {
     const savedTheme = localStorage.getItem('dsp_theme') as 'dark' | 'light' | null;
     const initialTheme = savedTheme || 'dark';
     setTheme(initialTheme);
     document.documentElement.classList.toggle('dark', initialTheme === 'dark');
+    updateColorSchemeMeta(initialTheme);
   }, []);
 
   const toggleTheme = () => {
@@ -50,6 +62,7 @@ export default function HomePage() {
     setTheme(nextTheme);
     localStorage.setItem('dsp_theme', nextTheme);
     document.documentElement.classList.toggle('dark', nextTheme === 'dark');
+    updateColorSchemeMeta(nextTheme);
   };
 
   // Fetch demo data

@@ -9,13 +9,22 @@
 }
 
 :root {
-  color-scheme: light;
+  color-scheme: light dark;
   --canvas: #f5f4ef;
   --surface: #eceae2;
   --surface-elevated: #faf9f5;
   --ink: #111113;
   --ink-muted: #52525b;
   --hairline: rgba(17, 17, 19, 0.12);
+  --scrollbar-thumb: rgba(128, 128, 140, 0.35);
+  --scrollbar-track: var(--canvas);
+
+  &:has(> head > meta[name="color-scheme"][content="dark"]) {
+    color-scheme: dark;
+  }
+  &:has(> head > meta[name="color-scheme"][content="light"]) {
+    color-scheme: light;
+  }
 }
 
 .dark {
@@ -26,11 +35,15 @@
   --ink: #f4f4f5;
   --ink-muted: #a1a1aa;
   --hairline: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb: rgba(255, 255, 255, 0.2);
+  --scrollbar-track: var(--canvas);
 }
 
 html {
   scroll-behavior: smooth;
   overflow-x: clip;
+  scrollbar-color: var(--scrollbar-thumb) var(--scrollbar-track);
+  scrollbar-width: thin;
 }
 
 body {
@@ -68,23 +81,29 @@ dialog::backdrop {
   backdrop-filter: blur(8px);
 }
 
-/* Custom sleek scrollbar */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
+/* Custom sleek scrollbar fallback for legacy WebKit/Blink browsers without scrollbar-color */
+@supports not (scrollbar-color: auto) {
+  html {
+    scrollbar-width: auto;
+  }
 
-::-webkit-scrollbar-track {
-  background: var(--canvas);
-}
+  ::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+  }
 
-::-webkit-scrollbar-thumb {
-  background: rgba(128, 128, 140, 0.28);
-  border-radius: 9999px;
-}
+  ::-webkit-scrollbar-track {
+    background: var(--canvas);
+  }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(128, 128, 140, 0.45);
+  ::-webkit-scrollbar-thumb {
+    background: var(--scrollbar-thumb);
+    border-radius: 9999px;
+  }
+
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(128, 128, 140, 0.45);
+  }
 }
 
 @media (prefers-reduced-motion: reduce) {
