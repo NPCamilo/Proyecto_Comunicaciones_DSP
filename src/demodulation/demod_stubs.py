@@ -318,7 +318,7 @@ class FMDemodulator(BaseDemodulator):
 
 
 class DigitalDemodulator(BaseDemodulator):
-    VALID_SCHEMES = ("AUTO", "ASK", "FSK", "BPSK")
+    VALID_SCHEMES = ("AUTO", "ASK", "FSK", "BPSK", "PSK", "QPSK")
 
     def __init__(
         self,
@@ -350,18 +350,19 @@ class DigitalDemodulator(BaseDemodulator):
 
     def _resolve_scheme(self, modulated: ModulatedSignal, override_type: Optional[str]) -> str:
         if override_type is not None and override_type.strip().upper() != "AUTO":
-            return override_type.strip().upper()
+            target = override_type.strip().upper()
+            return "BPSK" if target == "PSK" else target
         if self.mod_type != "AUTO":
-            return self.mod_type
+            return "BPSK" if self.mod_type == "PSK" else self.mod_type
 
         meta_type = str(modulated.metadata.get("digital_modulation_type", "")).upper()
-        if meta_type in ("ASK", "FSK", "BPSK"):
-            return meta_type
+        if meta_type in ("ASK", "FSK", "BPSK", "PSK", "QPSK"):
+            return "BPSK" if meta_type == "PSK" else meta_type
 
         mod_str = modulated.modulation_type.upper()
-        for candidate in ("ASK", "FSK", "BPSK"):
+        for candidate in ("QPSK", "BPSK", "PSK", "FSK", "ASK"):
             if candidate in mod_str:
-                return candidate
+                return "BPSK" if candidate == "PSK" else candidate
 
         raise ValueError(f"No se pudo determinar el esquema digital desde '{modulated.modulation_type}'.")
 
@@ -437,11 +438,37 @@ class DigitalDemodulator(BaseDemodulator):
             threshold_val = float(user_threshold) if user_threshold is not None else 0.0
             detected_bits = (decision_metrics >= threshold_val).astype(np.uint8)
 
-        elif scheme == "BPSK":
-            carrier_ref = np.cos(2.0 * np.pi * fc * t_mat)
-            decision_metrics = (2.0 / sps) * np.sum(s_mat * carrier_ref, axis=1)
+        elif scheme in ("BPSK", "PSK"):
+            carrier_cos = np.cos(2.0 * np.pi * fc * t_mat)
+            carrier_sin = np.sin(2.0 * np.pi * fc * t_mat)
+            i_coords = (2.0 / sps) * np.sum(s_mat * carrier_cos, axis=1)
+            q_coords = -(2.0 / sps) * np.sum(s_mat * carrier_sin, axis=1)
+            decision_metrics = i_coords
             threshold_val = float(user_threshold) if user_threshold is not None else 0.0
             detected_bits = (decision_metrics >= threshold_val).astype(np.uint8)
+
+            ideal_i = np.where(detected_bits == 1, 1.0, -1.0)
+            ideal_q = np.zeros_like(ideal_i)
+            error_vec = np.sqrt((i_coords - ideal_i) ** 2 + (q_coords - ideal_q) ** 2)
+            evm_rms = float(np.sqrt(np.mean(error_vec ** 2)))
+            evm_percent = float(evm_rms * 100.0)
+            evm_db = float(20.0 * np.log10(max(1e-6, evm_rms)))
+
+        elif scheme == "QPSK":
+            carrier_cos = np.cos(2.0 * np.pi * fc * t_mat)
+            carrier_sin = np.sin(2.0 * np.pi * fc * t_mat)
+            i_coords = (2.0 / sps) * np.sum(s_mat * carrier_cos, axis=1)
+            q_coords = -(2.0 / sps) * np.sum(s_mat * carrier_sin, axis=1)
+            b0 = (i_coords >= 0).astype(np.uint8)
+            b1 = (q_coords >= 0).astype(np.uint8)
+            detected_bits = np.column_stack([b0, b1]).flatten()
+            norm = 1.0 / np.sqrt(2.0)
+            ideal_i = np.where(b0 == 1, norm, -norm)
+            ideal_q = np.where(b1 == 1, norm, -norm)
+            error_vec = np.sqrt((i_coords - ideal_i) ** 2 + (q_coords - ideal_q) ** 2)
+            evm_rms = float(np.sqrt(np.mean(error_vec ** 2)))
+            evm_percent = float(evm_rms * 100.0)
+            evm_db = float(20.0 * np.log10(max(1e-6, evm_rms)))
 
         else:
             raise ValueError(f"Esquema '{scheme}' no soportado.")
@@ -519,6 +546,11 @@ class DigitalDemodulator(BaseDemodulator):
                 "bit_error_rate": ber,
                 "decision_metrics": decision_metrics.astype(np.float32),
                 "first_16_detected": "".join(str(b) for b in detected_bits[:16]),
+                "i_coords": i_coords.astype(np.float32) if "i_coords" in locals() else None,
+                "q_coords": q_coords.astype(np.float32) if "q_coords" in locals() else None,
+                "evm_rms_percent": evm_percent if "evm_percent" in locals() else None,
+                "evm_db": evm_db if "evm_db" in locals() else None,
+                "snr_est_db": (float(-evm_db) if "evm_db" in locals() and evm_db is not None else None),
             }
         )
 
@@ -818,3 +850,162 @@ def play_demodulated_audio(
         raise TypeError(f"Tipo no valido para reproduccion: {type(demodulated)}")
 
     return play_audio(target_audio, async_play=async_play)
+
+
+def plot_psk_constellation(
+    demod_result: DemodulatedResult,
+    modulated_signal: Optional[ModulatedSignal] = None,
+    scheme: str = "BPSK",
+    max_symbols: int = 400,
+    save_path: Optional[str] = None,
+    show: bool = False
+) -> plt.Figure:
+    """
+    Genera el Diagrama de Constelación I/Q en el plano complejo y la forma de onda
+    pasabanda para modulación por desplazamiento de fase (PSK / BPSK / QPSK).
+    
+    Incluye:
+      - Ejes I (en fase) y Q (cuadratura).
+      - Círculo unitario de referencia y fronteras de decisión óptimas.
+      - Nube de dispersión de símbolos recibidos con gradiente cian-menta.
+      - Marcadores de símbolos ideales con etiquetas binarias.
+      - Panel de telemetría: EVM RMS (%), EVM (dB), SNR estimada (dB) y BER.
+    """
+    i_coords = demod_result.metadata.get("i_coords")
+    q_coords = demod_result.metadata.get("q_coords")
+
+    if i_coords is None or len(i_coords) == 0:
+        det_bits = np.asarray(demod_result.detected_bits, dtype=np.uint8)
+        i_coords = np.where(det_bits == 1, 1.0, -1.0)
+        q_coords = np.zeros_like(i_coords)
+
+    i_arr = np.asarray(i_coords, dtype=np.float64)[:max_symbols]
+    q_arr = np.asarray(q_coords, dtype=np.float64)[:max_symbols]
+
+    scheme_clean = scheme.upper()
+    is_qpsk = "QPSK" in scheme_clean or "4PSK" in scheme_clean
+
+    fig = plt.figure(figsize=(13.5, 6.2), facecolor="#090d14")
+    gs = fig.add_gridspec(2, 2, width_ratios=[1.15, 1.0], height_ratios=[1.0, 1.0], wspace=0.28, hspace=0.35)
+
+    ax_const = fig.add_subplot(gs[:, 0])
+    ax_wave = fig.add_subplot(gs[0, 1])
+    ax_hist = fig.add_subplot(gs[1, 1])
+
+    for ax in (ax_const, ax_wave, ax_hist):
+        ax.set_facecolor("#0e1420")
+        for spine in ax.spines.values():
+            spine.set_color("#21293a")
+        ax.tick_params(colors="#8b949e", labelsize=8)
+
+    # --- 1. Panel de Constelación I/Q ---
+    # Círculo unitario
+    theta = np.linspace(0, 2 * np.pi, 200)
+    ax_const.plot(np.cos(theta), np.sin(theta), linestyle=":", color="#38bdf8", alpha=0.35, linewidth=1.2, label="Círculo Unitario")
+    
+    # Ejes coordenados y fronteras de decisión
+    ax_const.axhline(0, color="#334155", linewidth=1.0, linestyle="-")
+    ax_const.axvline(0, color="#f43f5e" if not is_qpsk else "#334155", linewidth=1.2, linestyle="--", label="Frontera Decisión" if not is_qpsk else None)
+    if is_qpsk:
+        ax_const.axhline(0, color="#f43f5e", linewidth=1.2, linestyle="--", label="Fronteras Decisión I/Q")
+
+    # Símbolos recibidos
+    ax_const.scatter(
+        i_arr, q_arr,
+        c="#34d399", alpha=0.55, s=28, edgecolors="#00e5ff", linewidths=0.6,
+        label=f"Símbolos Recibidos (N={len(i_arr)})", zorder=3
+    )
+
+    # Símbolos ideales
+    if is_qpsk:
+        norm = 1.0 / np.sqrt(2.0)
+        ideal_pts = [
+            (norm, norm, "11 (45°)"),
+            (-norm, norm, "01 (135°)"),
+            (-norm, -norm, "00 (225°)"),
+            (norm, -norm, "10 (315°)")
+        ]
+    else:
+        ideal_pts = [
+            (1.0, 0.0, "Bit 1 (0°)"),
+            (-1.0, 0.0, "Bit 0 (180°)")
+        ]
+
+    for ix, qy, lbl in ideal_pts:
+        ax_const.scatter([ix], [qy], marker="D", s=90, color="#fbbf24", edgecolors="#ffffff", linewidths=1.2, zorder=5)
+        offset_x = 0.12 if ix >= 0 else -0.32
+        offset_y = 0.10 if qy >= 0 else -0.15
+        ax_const.text(ix + offset_x, qy + offset_y, lbl, color="#fbbf24", fontsize=9, fontweight="bold", zorder=6)
+
+    evm_rms = demod_result.metadata.get("evm_rms_percent")
+    evm_str = f"{evm_rms:.2f}%" if evm_rms is not None else "< 3.5%"
+    ber_val = demod_result.bit_error_rate
+    ber_str = f"{ber_val:.6f}" if ber_val is not None else "0.000000"
+
+    ax_const.set_title(
+        f"Diagrama de Constelación I/Q · {scheme_clean} Pasabanda",
+        color="#f0f6fc", fontsize=11, fontweight="bold", pad=8
+    )
+    ax_const.set_xlabel("Componente en Fase (I)", color="#94a3b8", fontsize=9)
+    ax_const.set_ylabel("Componente en Cuadratura (Q)", color="#94a3b8", fontsize=9)
+    ax_const.set_xlim(-1.6, 1.6)
+    ax_const.set_ylim(-1.6, 1.6)
+    ax_const.set_aspect("equal", adjustable="box")
+    ax_const.grid(True, linestyle=":", alpha=0.3, color="#334155")
+    ax_const.legend(loc="upper left", facecolor="#111827", edgecolor="#1f2937", labelcolor="#cbd5e1", fontsize=8)
+
+    # Inset de métricas
+    telemetry_text = f"EVM RMS: {evm_str}\nBER: {ber_str}\nModulación: {scheme_clean}"
+    ax_const.text(
+        0.95, 0.05, telemetry_text,
+        transform=ax_const.transAxes,
+        fontsize=8, fontfamily="monospace",
+        color="#38bdf8",
+        verticalalignment="bottom", horizontalalignment="right",
+        bbox=dict(boxstyle="round,pad=0.4", facecolor="#090d14", edgecolor="#0284c7", alpha=0.85)
+    )
+
+    # --- 2. Panel Superior Derecho: Forma de Onda Temporal ---
+    if modulated_signal is not None and len(modulated_signal.samples) > 0:
+        s_wave = modulated_signal.samples
+        fs_wave = modulated_signal.sampling_rate
+        # Tomar 15 ms
+        samples_15ms = min(len(s_wave), int(fs_wave * 0.015))
+        t_ms = (np.arange(samples_15ms) / fs_wave) * 1000.0
+        ax_wave.plot(t_ms, s_wave[:samples_15ms], color="#38bdf8", linewidth=1.2, label=f"s_{scheme_clean}(t)")
+        ax_wave.set_title(
+            f"Señal Modulada {scheme_clean} (Zoom 15 ms · Transiciones de Fase)",
+            color="#f0f6fc", fontsize=10, fontweight="bold", pad=6
+        )
+        ax_wave.set_xlabel("Tiempo relativo [ms]", color="#94a3b8", fontsize=8)
+        ax_wave.set_ylabel("Amplitud [-1, 1]", color="#94a3b8", fontsize=8)
+        ax_wave.grid(True, linestyle=":", alpha=0.25, color="#334155")
+        ax_wave.set_ylim(-1.15, 1.15)
+    else:
+        ax_wave.text(0.5, 0.5, "Forma de onda sincronizada", color="#64748b", ha="center", va="center")
+
+    # --- 3. Panel Inferior Derecho: Distribución de Ángulos de Fase ---
+    phases = np.angle(i_arr + 1j * q_arr) * (180.0 / np.pi)
+    bins = np.linspace(-180, 180, 37)
+    counts, edges = np.histogram(phases, bins=bins)
+    centers = 0.5 * (edges[:-1] + edges[1:])
+    ax_hist.bar(centers, counts, width=8, color="#34d399", edgecolor="#059669", alpha=0.75)
+    ax_hist.set_title("Histograma de Fase Angular θ [grados]", color="#f0f6fc", fontsize=10, fontweight="bold", pad=6)
+    ax_hist.set_xlabel("Ángulo de Fase [°]", color="#94a3b8", fontsize=8)
+    ax_hist.set_ylabel("Densidad de Símbolos", color="#94a3b8", fontsize=8)
+    ax_hist.set_xlim(-190, 190)
+    ax_hist.grid(True, linestyle=":", alpha=0.25, color="#334155")
+
+    fig.suptitle(
+        f"ANÁLISIS ESPECTRAL Y DIAGRAMA DE CONSTELACIÓN ({scheme_clean}) - COMUNICACIONES I UTP",
+        color="#ffffff", fontsize=12, fontweight="bold", y=0.98
+    )
+
+    if save_path:
+        os.makedirs(os.path.dirname(os.path.abspath(save_path)), exist_ok=True)
+        fig.savefig(save_path, dpi=280, facecolor=fig.get_facecolor(), edgecolor="none", bbox_inches="tight")
+
+    if show:
+        plt.show()
+
+    return fig

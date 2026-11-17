@@ -222,7 +222,7 @@ export default function HomePage() {
             </h1>
 
             <p className="text-base sm:text-lg text-(--ink-muted) leading-relaxed max-w-3xl">
-              Plataforma interactiva para la adquisición temporal, análisis espectral de Fourier, digitalización PCM bajo el criterio Nyquist-Shannon, modulación en radiofrecuencia (AM, FM, FSK) y síntesis analógica por interpolación Sinc de Whittaker.
+              Plataforma interactiva para la adquisición temporal, análisis espectral de Fourier, digitalización PCM bajo el criterio Nyquist-Shannon, modulación analógica y digital (AM, FM, FSK, PSK), diagrama de constelación I/Q y síntesis analógica por interpolación Sinc de Whittaker.
             </p>
 
             <div className="flex flex-wrap items-center gap-3 pt-2 text-xs font-mono text-(--ink-muted)">
@@ -247,7 +247,7 @@ export default function HomePage() {
                   Comparador A/B de Forma de Onda en Tiempo Real (120 FPS)
                 </span>
                 <span className="text-[11px] font-mono text-(--ink-muted)">
-                  Arrastra el cursor para comparar Voz Original vs Reconstrucción Sinc
+                  Arrastra el cursor para comparar Audio Original (Billie Bossa Nova) vs Reconstrucción Sinc
                 </span>
               </div>
 

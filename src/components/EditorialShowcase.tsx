@@ -5,6 +5,7 @@ import { DemoData } from '@/types/dsp';
 import { OptimizedPicture } from './OptimizedPicture';
 import { ImageLightboxDialog, LightboxAsset } from './ImageLightboxDialog';
 import { AudibleSignalDeck, AudioTrackItem } from './AudibleSignalDeck';
+import { ConstellationDiagram } from './ConstellationDiagram';
 import {
   Maximize2,
   ShieldCheck,
@@ -16,6 +17,7 @@ import {
   CheckCircle2,
   Cpu,
   Info,
+  Sparkles,
 } from 'lucide-react';
 
 interface EditorialShowcaseProps {
@@ -25,17 +27,17 @@ interface EditorialShowcaseProps {
 export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) {
   const [lightboxAsset, setLightboxAsset] = useState<LightboxAsset | null>(null);
   const [exhibit2Plot, setExhibit2Plot] = useState<'nqs' | 'quant'>('nqs');
-  const [rfPlot, setRfPlot] = useState<'am' | 'fm' | 'fsk' | 'translation' | 'modes'>('am');
+  const [rfPlot, setRfPlot] = useState<'am' | 'fm' | 'fsk' | 'psk' | 'constellation' | 'translation' | 'modes'>('constellation');
 
-  const { fase1, fase2, fase3, fase4_5, assets } = demoData;
+  const { fase1, fase2, fase3, fase4_5, assets, constellation_data } = demoData;
 
   const tracks: AudioTrackItem[] = useMemo(
     () => [
       {
         id: 'track-1-orig',
         code: 'CH 01',
-        title: 'Voz Original Acústica',
-        subtitle: `Entrada PCM · fs = ${(fase1.audio.sample_rate_hz / 1000).toFixed(1)} kHz`,
+        title: 'Billie Bossa Nova (Original)',
+        subtitle: `Entrada Acústica · fs = ${(fase1.audio.sample_rate_hz / 1000).toFixed(1)} kHz`,
         src: assets.wav_original,
         accentClass: 'text-sky-400',
       },
@@ -64,32 +66,40 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         accentClass: 'text-pink-400',
       },
       {
-        id: 'track-5-am-coh',
+        id: 'track-5-psk-tx',
         code: 'CH 05',
+        title: 'Modulación Digital PSK (BPSK)',
+        subtitle: `Portadora fc = ${(fase2.psk?.carrier_freq_hz ?? 2400) / 1000} kHz · Salto de fase 180°`,
+        src: assets.wav_mod_psk || '/demo/modulada_psk.wav',
+        accentClass: 'text-cyan-400',
+      },
+      {
+        id: 'track-6-am-coh',
+        code: 'CH 06',
         title: 'Demodulación AM Coherente (RX)',
         subtitle: `Receptor sincrónico · SNR = ${fase3.am_coherent.snr_db.toFixed(2)} dB`,
         src: assets.wav_demod_am_coherent,
         accentClass: 'text-emerald-400',
       },
       {
-        id: 'track-6-am-env',
-        code: 'CH 06',
+        id: 'track-7-am-env',
+        code: 'CH 07',
         title: 'Demodulación AM Envolvente (RX)',
         subtitle: `Detector pico no lineal · SNR = ${fase3.am_envelope.snr_db.toFixed(2)} dB`,
         src: assets.wav_demod_am_envelope,
         accentClass: 'text-yellow-400',
       },
       {
-        id: 'track-7-fm-disc',
-        code: 'CH 07',
+        id: 'track-8-fm-disc',
+        code: 'CH 08',
         title: 'Demodulación FM Discriminador (RX)',
         subtitle: `Detector de cruces por cero · SNR = ${fase3.fm_discriminator.snr_db.toFixed(2)} dB`,
         src: assets.wav_demod_fm,
         accentClass: 'text-indigo-400',
       },
       {
-        id: 'track-8-dac-sinc',
-        code: 'CH 08',
+        id: 'track-9-dac-sinc',
+        code: 'CH 09',
         title: 'Reconstrucción DAC Sinc Whittaker',
         subtitle: `Salida analógica final · SNR = ${fase4_5.dac_sinc.snr_db.toFixed(2)} dB · r = ${fase4_5.dac_sinc.pearson_corr.toFixed(4)}`,
         src: assets.wav_reconstructed_sinc,
@@ -117,10 +127,10 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
               <span>01 // Adquisición Acústica & FFT</span>
             </div>
             <h2 className="font-display text-3xl sm:text-4xl font-bold tracking-tight text-(--ink)">
-              Espectro de la Voz Humana
+              Espectro Musical & Armónicos: Billie Bossa Nova
             </h2>
             <p className="max-w-2xl text-sm sm:text-base text-(--ink-muted) leading-relaxed">
-              Captura temporal de voz continua a { (fase1.audio.sample_rate_hz / 1000).toFixed(1) } kHz. Se realiza la Transformada Rápida de Fourier (FFT) para identificar el ancho de banda efectivo y verificar la ausencia de aliasing.
+              Captura temporal y análisis espectral de audio musical enriquecido (Billie Bossa Nova - Billie Eilish) a { (fase1.audio.sample_rate_hz / 1000).toFixed(1) } kHz. Se realiza la Transformada Rápida de Fourier (FFT) para caracterizar la densidad espectral de instrumentos, formantes vocales y percusión bajo el criterio Nyquist-Shannon.
             </p>
           </div>
 
@@ -403,6 +413,25 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
                 2-FSK Digital
               </button>
               <button
+                onClick={() => setRfPlot('psk')}
+                className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all ${
+                  rfPlot === 'psk' ? 'bg-cyan-500 text-black font-semibold' : 'text-(--ink-muted) hover:text-(--ink)'
+                }`}
+              >
+                BPSK Digital
+              </button>
+              <button
+                onClick={() => setRfPlot('constellation')}
+                className={`px-3 py-1 rounded-lg text-xs font-mono transition-all flex items-center gap-1.5 ${
+                  rfPlot === 'constellation'
+                    ? 'bg-sky-500 text-white font-semibold shadow-md'
+                    : 'bg-sky-500/10 text-sky-400 border border-sky-500/20 hover:bg-sky-500/20'
+                }`}
+              >
+                <Sparkles className="w-3.5 h-3.5" />
+                Constelación I/Q
+              </button>
+              <button
                 onClick={() => setRfPlot('translation')}
                 className={`px-2.5 py-1 rounded-lg text-xs font-mono transition-all ${
                   rfPlot === 'translation' ? 'bg-amber-500 text-black font-semibold' : 'text-(--ink-muted) hover:text-(--ink)'
@@ -422,44 +451,85 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
           </div>
 
           {/* Active RF Plot View */}
-          <div className="group relative rounded-2xl border border-(--hairline) bg-(--surface-elevated) p-3 overflow-hidden shadow-sm hover:border-(--hairline-hover) transition-all">
-            <div className="relative aspect-16/9 w-full rounded-xl overflow-hidden bg-black/40">
-              <OptimizedPicture
-                src={
-                  rfPlot === 'am'
-                    ? assets.fig_mod_am
-                    : rfPlot === 'fm'
-                    ? assets.fig_mod_fm
-                    : rfPlot === 'fsk'
-                    ? assets.fig_mod_fsk
-                    : rfPlot === 'translation'
-                    ? assets.fig_spectrum_translation
-                    : assets.fig_am_modes
-                }
-                alt={`Espectro y modulación ${rfPlot}`}
-                className="w-full h-full object-contain"
-              />
-              <button
-                onClick={() => {
-                  const currentSrc =
+          {rfPlot === 'constellation' ? (
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* Interactive Vector Constellation Canvas */}
+              <div className="lg:col-span-6">
+                <ConstellationDiagram data={constellation_data} />
+              </div>
+
+              {/* Scientific Constellation Plot Analysis */}
+              <div className="lg:col-span-6 group relative rounded-2xl border border-(--hairline) bg-(--surface-elevated) p-3 overflow-hidden shadow-sm hover:border-(--hairline-hover) transition-all">
+                <div className="relative aspect-16/9 w-full rounded-xl overflow-hidden bg-black/40">
+                  <OptimizedPicture
+                    src={assets.fig_constellation_psk || '/demo/11_diagrama_constelacion_psk_v2.png'}
+                    alt="Diagrama de constelación PSK y forma de onda"
+                    className="w-full h-full object-contain"
+                  />
+                  <button
+                    onClick={() =>
+                      openLightbox(
+                        assets.fig_constellation_psk || '/demo/11_diagrama_constelacion_psk_v2.png',
+                        'Diagrama de Constelación I/Q y Forma de Onda BPSK',
+                        `EVM RMS = ${constellation_data?.evm_rms_percent ?? 14.38}%, BER = ${constellation_data?.ber ?? 0.0}`
+                      )
+                    }
+                    className="absolute top-3 right-3 p-2 rounded-lg bg-black/60 hover:bg-black/90 text-white backdrop-blur-md transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100"
+                    aria-label="Ampliar gráfica de constelación PSK"
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                  </button>
+                </div>
+                <div className="flex items-center justify-between px-3 pt-3 text-xs font-mono text-(--ink-muted)">
+                  <span>Figura 11: Constelación en Plano Complejo I/Q y Transiciones de Fase 180°</span>
+                  <span className="text-emerald-400">BER: {constellation_data?.ber ?? 0.000000}</span>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="group relative rounded-2xl border border-(--hairline) bg-(--surface-elevated) p-3 overflow-hidden shadow-sm hover:border-(--hairline-hover) transition-all">
+              <div className="relative aspect-16/9 w-full rounded-xl overflow-hidden bg-black/40">
+                <OptimizedPicture
+                  src={
                     rfPlot === 'am'
                       ? assets.fig_mod_am
                       : rfPlot === 'fm'
                       ? assets.fig_mod_fm
                       : rfPlot === 'fsk'
                       ? assets.fig_mod_fsk
+                      : rfPlot === 'psk'
+                      ? (assets.fig_mod_psk || '/demo/06b_modulacion_digital_psk.png')
                       : rfPlot === 'translation'
                       ? assets.fig_spectrum_translation
-                      : assets.fig_am_modes;
-                  openLightbox(currentSrc, `Análisis de Modulación RF: ${rfPlot.toUpperCase()}`);
-                }}
-                className="absolute top-3 right-3 p-2 rounded-lg bg-black/60 hover:bg-black/90 text-white backdrop-blur-md transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100"
-                aria-label="Ampliar gráfica de modulación RF"
-              >
-                <Maximize2 className="w-4 h-4" />
-              </button>
+                      : assets.fig_am_modes
+                  }
+                  alt={`Espectro y modulación ${rfPlot}`}
+                  className="w-full h-full object-contain"
+                />
+                <button
+                  onClick={() => {
+                    const currentSrc =
+                      rfPlot === 'am'
+                        ? assets.fig_mod_am
+                        : rfPlot === 'fm'
+                        ? assets.fig_mod_fm
+                        : rfPlot === 'fsk'
+                        ? assets.fig_mod_fsk
+                        : rfPlot === 'psk'
+                        ? (assets.fig_mod_psk || '/demo/06b_modulacion_digital_psk.png')
+                        : rfPlot === 'translation'
+                        ? assets.fig_spectrum_translation
+                        : assets.fig_am_modes;
+                    openLightbox(currentSrc, `Análisis de Modulación RF: ${rfPlot.toUpperCase()}`);
+                  }}
+                  className="absolute top-3 right-3 p-2 rounded-lg bg-black/60 hover:bg-black/90 text-white backdrop-blur-md transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100"
+                  aria-label="Ampliar gráfica de modulación RF"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-          </div>
+          )}
         </div>
       </section>
 

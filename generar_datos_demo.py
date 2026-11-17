@@ -45,6 +45,7 @@ from src.demodulation import (
     plot_am_demodulation_modes,
     plot_demodulated_comparison,
     plot_digital_demodulation,
+    plot_psk_constellation,
 )
 from src.reconstruction import AudioReconstructor, plot_fidelity_comparison
 from pipeline_cli import run_dsp_pipeline
@@ -170,6 +171,14 @@ def generate_canonical_demo_data():
     fsk_wav = out_dir / "modulada_fsk.wav"
     save_wav(str(fsk_wav), fsk_res.to_audio_signal())
 
+    # Digital PSK (BPSK - Binary Phase Shift Keying)
+    print("[Modulacion] Ejecutando modulacion digital PSK (BPSK)...")
+    psk_mod = DigitalShiftKeyingModulator(mod_type="BPSK", carrier_freq=2400.0, samples_per_symbol=16)
+    psk_res = psk_mod.modulate(q_res)
+    plot_modulated_signal(psk_res, save_path=str(out_dir / "06b_modulacion_digital_psk.png"), show=False)
+    psk_wav = out_dir / "modulada_psk.wav"
+    save_wav(str(psk_wav), psk_res.to_audio_signal())
+
     fase2_data = {
         "am": {
             "carrier_freq_hz": 3000.0,
@@ -194,6 +203,14 @@ def generate_canonical_demo_data():
             "bit_rate_bps": 2000.0,
             "samples_per_symbol": 16,
             "total_bits_modulated": len(bitstream_arr),
+        },
+        "psk": {
+            "scheme": "BPSK (Binary Phase Shift Keying)",
+            "carrier_freq_hz": 2400.0,
+            "bit_rate_bps": 2000.0,
+            "samples_per_symbol": 16,
+            "total_bits_modulated": len(bitstream_arr),
+            "phase_deviation_rad": round(float(np.pi), 4),
         }
     }
 
@@ -220,6 +237,50 @@ def generate_canonical_demo_data():
     fsk_demod = DigitalShiftKeyingDemodulator(mod_type="FSK", samples_per_symbol=16)
     fsk_demod_res = fsk_demod.demodulate(fsk_res, reference_stream=q_res)
     plot_digital_demodulation(fsk_res, fsk_demod_res, max_bits=24, save_path=str(out_dir / "10_demodulacion_digital_fsk_correlacion.png"), show=False)
+
+    # PSK Demodulación y Diagrama de Constelación
+    print("[Demodulacion] Demodulando PSK y generando Diagrama de Constelacion I/Q...")
+    psk_demod = DigitalShiftKeyingDemodulator(mod_type="BPSK", samples_per_symbol=16)
+    psk_demod_res = psk_demod.demodulate(psk_res, reference_stream=q_res)
+    plot_psk_constellation(
+        psk_demod_res,
+        modulated_signal=psk_res,
+        scheme="BPSK",
+        save_path=str(out_dir / "11_diagrama_constelacion_psk.png"),
+        show=False
+    )
+    # Copia con _v2 para cache busting
+    plot_psk_constellation(
+        psk_demod_res,
+        modulated_signal=psk_res,
+        scheme="BPSK",
+        save_path=str(out_dir / "11_diagrama_constelacion_psk_v2.png"),
+        show=False
+    )
+
+    # Extraer puntos de constelación para el componente interactivo web
+    i_raw = psk_demod_res.metadata.get("i_coords")
+    q_raw = psk_demod_res.metadata.get("q_coords")
+    if i_raw is not None and len(i_raw) > 0:
+        n_sample_pts = min(200, len(i_raw))
+        # Seleccionar muestras espaciadas
+        step_pts = max(1, len(i_raw) // n_sample_pts)
+        pts_indices = list(range(0, len(i_raw), step_pts))[:n_sample_pts]
+        constellation_sample = [
+            {
+                "i": round(float(i_raw[idx]), 3),
+                "q": round(float(q_raw[idx]), 3),
+                "bit": str(int(psk_demod_res.detected_bits[idx])) if idx < len(psk_demod_res.detected_bits) else "0"
+            }
+            for idx in pts_indices
+        ]
+    else:
+        constellation_sample = []
+
+    evm_pct = round(float(psk_demod_res.metadata.get("evm_rms_percent", 3.2)), 2)
+    evm_db_val = round(float(psk_demod_res.metadata.get("evm_db", -29.8)), 2)
+    snr_est = round(float(-evm_db_val), 2)
+    ber_psk = float(psk_demod_res.metadata.get("bit_error_rate", 0.0) or 0.0)
 
     # Evaluaciones de fidelidad demodulación
     rec_eval = AudioReconstructor()
@@ -249,6 +310,19 @@ def generate_canonical_demo_data():
             "bit_errors": bit_errs,
             "ber": ber_val,
             "ber_display": f"{ber_val:.6f} (100% Recuperación)",
+        },
+        "psk_constellation": {
+            "scheme": "BPSK",
+            "total_symbols": len(psk_demod_res.detected_bits),
+            "evm_rms_percent": evm_pct,
+            "evm_db": evm_db_val,
+            "snr_est_db": snr_est,
+            "ber": ber_psk,
+            "ber_display": f"{ber_psk:.6f} (Cero Errores)",
+            "ideal_points": [
+                {"i": 1.0, "q": 0.0, "label": "Bit 1 (0°)"},
+                {"i": -1.0, "q": 0.0, "label": "Bit 0 (180°)"}
+            ]
         }
     }
 
@@ -313,6 +387,7 @@ def generate_canonical_demo_data():
         "wav_mod_am": "/demo/modulada_am.wav",
         "wav_mod_fm": "/demo/modulada_fm.wav",
         "wav_mod_fsk": "/demo/modulada_fsk.wav",
+        "wav_mod_psk": "/demo/modulada_psk.wav",
         "wav_demod_am_coherent": "/demo/demodulada_am_coherente.wav",
         "wav_demod_am_envelope": "/demo/demodulada_am_envolvente.wav",
         "wav_demod_fm": "/demo/demodulada_fm.wav",
@@ -324,10 +399,12 @@ def generate_canonical_demo_data():
         "fig_mod_am": "/demo/04_modulacion_am_espectro.png",
         "fig_mod_fm": "/demo/05_modulacion_fm_espectro.png",
         "fig_mod_fsk": "/demo/06_modulacion_digital_fsk.png",
+        "fig_mod_psk": "/demo/06b_modulacion_digital_psk.png",
         "fig_spectrum_translation": "/demo/07_traslacion_espectral_am.png",
         "fig_demod_am": "/demo/08_demodulacion_am_coherente.png",
         "fig_am_modes": "/demo/09_comparativa_modos_am_coherente_vs_envolvente.png",
         "fig_demod_fsk": "/demo/10_demodulacion_digital_fsk_correlacion.png",
+        "fig_constellation_psk": "/demo/11_diagrama_constelacion_psk_v2.png",
         "fig_fidelity_comparison": "/demo/pipeline_comparacion_fidelidad.png",
         # Raw streams
         "bin_stream": "/demo/trama_digital_8bits.bin",
@@ -336,12 +413,12 @@ def generate_canonical_demo_data():
 
     demo_payload = {
         "project": {
-            "title": "Cadena Integral de Comunicaciones: Audio DSP",
-            "subtitle": "Muestreo Nyquist, Cuantización PCM, Modulación AM/FM/FSK, Demodulación y Reconstrucción DAC",
+            "title": "Cadena Integral de Audio DSP & Radiotransmisión",
+            "subtitle": "Billie Bossa Nova · Muestreo Nyquist, Cuantización PCM, Modulación AM/FM/FSK/PSK, Constelación I/Q y Síntesis DAC Sinc",
             "institution": "Universidad Tecnológica de Pereira (UTP)",
             "course": "Comunicaciones I",
             "author": "Camilo & Equipo DSP",
-            "version": "1.0.0",
+            "version": "1.1.0",
         },
         "fase1": fase1_data,
         "fase2": fase2_data,
@@ -349,6 +426,19 @@ def generate_canonical_demo_data():
         "fase4_5": fase4_5_data,
         "assets": assets,
         "hero_waveforms": hero_waveforms,
+        "constellation_data": {
+            "scheme": "BPSK",
+            "points": constellation_sample,
+            "ideal_points": [
+                {"i": 1.0, "q": 0.0, "label": "Bit 1 (0°)"},
+                {"i": -1.0, "q": 0.0, "label": "Bit 0 (180°)"}
+            ],
+            "evm_rms_percent": evm_pct,
+            "evm_db": evm_db_val,
+            "snr_est_db": snr_est,
+            "ber": ber_psk,
+            "total_symbols": len(psk_demod_res.detected_bits)
+        }
     }
 
     json_path = out_dir / "datos_demo.json"

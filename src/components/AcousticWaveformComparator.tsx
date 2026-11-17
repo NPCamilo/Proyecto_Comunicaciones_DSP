@@ -490,7 +490,7 @@ export function AcousticWaveformComparator({
               <div className="flex items-center gap-2">
                 <span className="h-2 w-2 rounded-full bg-sky-400" />
                 <span className="font-mono text-xs font-semibold text-sky-400">
-                  CANAL A · Señal de Voz Original
+                  CANAL A · Audio Original (Billie Bossa Nova)
                 </span>
                 {viewMode === "transient" && (
                   <span className="hidden sm:inline-block rounded bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-mono text-sky-300 border border-sky-500/20">
@@ -515,12 +515,12 @@ export function AcousticWaveformComparator({
                 {playingChannel === "orig" ? (
                   <>
                     <Pause className="h-3 w-3 text-sky-400" />
-                    <span>Pausar Voz</span>
+                    <span>Pausar Audio</span>
                   </>
                 ) : (
                   <>
                     <Volume2 className="h-3 w-3 text-sky-400" />
-                    <span>Escuchar Voz</span>
+                    <span>Escuchar Audio</span>
                   </>
                 )}
               </button>

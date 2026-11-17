@@ -551,8 +551,10 @@ class DigitalShiftKeyingModulator(BaseModulator):
             continuous_phase (bool): Si es True en FSK, genera fase continua (CPFSK).
             normalize_output (bool): Escala la señal a [-1.0, 1.0] para compatibilidad DAC/audio.
         """
-        valid_types = ("ASK", "FSK", "BPSK")
+        valid_types = ("ASK", "FSK", "BPSK", "PSK", "QPSK")
         mod_upper = mod_type.upper()
+        if mod_upper == "PSK":
+            mod_upper = "BPSK"
         if mod_upper not in valid_types:
             raise ValueError(f"Tipo de modulación digital '{mod_type}' no válido. Use {valid_types}.")
 
@@ -687,11 +689,34 @@ class DigitalShiftKeyingModulator(BaseModulator):
                 t_local = np.tile(np.arange(sps, dtype=np.float32) / fs, num_bits)
                 s_mod = amp_waveform * np.cos(2.0 * np.pi * freq_waveform * t_local).astype(np.float32)
 
-        elif mod_type == "BPSK":
+        elif mod_type in ("BPSK", "PSK"):
             # BPSK: Bit 1 -> phase = 0, Bit 0 -> phase = pi
             phase_offset = np.where(bit_waveform == 1, 0.0, np.pi).astype(np.float32)
             carrier_phase = 2.0 * np.pi * fc * t + phase_offset
             s_mod = a1 * np.cos(carrier_phase).astype(np.float32)
+
+        elif mod_type == "QPSK":
+            # QPSK: 2 bits por símbolo (dibits)
+            # Asegurar longitud par
+            pad_len = len(bits) % 2
+            q_bits = np.pad(bits, (0, pad_len), mode="constant") if pad_len else bits
+            dibits = q_bits.reshape(-1, 2)
+            # Mapeo Gray:
+            # 11 -> pi/4 (+I, +Q)
+            # 01 -> 3pi/4 (-I, +Q)
+            # 00 -> 5pi/4 (-I, -Q)
+            # 10 -> 7pi/4 (+I, -Q)
+            b0 = dibits[:, 0]
+            b1 = dibits[:, 1]
+            i_sym = np.where(b0 == 1, 1.0, -1.0) / np.sqrt(2.0)
+            q_sym = np.where(b1 == 1, 1.0, -1.0) / np.sqrt(2.0)
+            
+            i_wave = np.repeat(i_sym, sps).astype(np.float32)
+            q_wave = np.repeat(q_sym, sps).astype(np.float32)
+            
+            t_qpsk = np.arange(len(i_wave), dtype=np.float32) / fs
+            s_mod = a1 * (i_wave * np.cos(2.0 * np.pi * fc * t_qpsk) - q_wave * np.sin(2.0 * np.pi * fc * t_qpsk)).astype(np.float32)
+            t = t_qpsk
 
         else:
             raise ValueError(f"Esquema de modulación '{mod_type}' no implementado.")

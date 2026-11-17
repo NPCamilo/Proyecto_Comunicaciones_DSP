@@ -60,6 +60,14 @@ export interface Fase2ModulationData {
     samples_per_symbol: number;
     total_bits_modulated: number;
   };
+  psk?: {
+    scheme: string;
+    carrier_freq_hz: number;
+    bit_rate_bps: number;
+    samples_per_symbol: number;
+    total_bits_modulated: number;
+    phase_deviation_rad?: number;
+  };
 }
 
 export interface Fase3DemodulationData {
@@ -80,6 +88,16 @@ export interface Fase3DemodulationData {
     bit_errors: number;
     ber: number;
     ber_display: string;
+  };
+  psk_constellation?: {
+    scheme: string;
+    total_symbols: number;
+    evm_rms_percent: number;
+    evm_db: number;
+    snr_est_db: number;
+    ber: number;
+    ber_display: string;
+    ideal_points: { i: number; q: number; label: string }[];
   };
 }
 
@@ -103,6 +121,7 @@ export interface DemoAssets {
   wav_mod_am: string;
   wav_mod_fm: string;
   wav_mod_fsk: string;
+  wav_mod_psk?: string;
   wav_demod_am_coherent: string;
   wav_demod_am_envelope: string;
   wav_demod_fm: string;
@@ -113,13 +132,32 @@ export interface DemoAssets {
   fig_mod_am: string;
   fig_mod_fm: string;
   fig_mod_fsk: string;
+  fig_mod_psk?: string;
   fig_spectrum_translation: string;
   fig_demod_am: string;
   fig_am_modes: string;
   fig_demod_fsk: string;
+  fig_constellation_psk?: string;
   fig_fidelity_comparison: string;
   bin_stream: string;
   json_metadata: string;
+}
+
+export interface ConstellationPoint {
+  i: number;
+  q: number;
+  bit?: string;
+}
+
+export interface ConstellationData {
+  scheme: string;
+  points: ConstellationPoint[];
+  ideal_points: { i: number; q: number; label: string }[];
+  evm_rms_percent: number;
+  evm_db: number;
+  snr_est_db: number;
+  ber: number;
+  total_symbols: number;
 }
 
 export interface HeroWaveformData {
@@ -140,6 +178,7 @@ export interface DemoData {
   fase4_5: Fase45Data;
   assets: DemoAssets;
   hero_waveforms?: HeroWaveformData;
+  constellation_data?: ConstellationData;
 }
 
 export interface LiveAudioProcessResponse {
