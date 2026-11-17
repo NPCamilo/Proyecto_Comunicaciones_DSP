@@ -31,6 +31,9 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
 
   const { fase1, fase2, fase3, fase4_5, assets, constellation_data } = demoData;
 
+  // Helper para forzar recarga limpia sin cache (v2.0 Billie Bossa Nova)
+  const vAsset = (path?: string) => (path ? (path.includes('?') ? path : `${path}?v=2.0-billie`) : '');
+
   const tracks: AudioTrackItem[] = useMemo(
     () => [
       {
@@ -38,7 +41,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 01',
         title: 'Billie Bossa Nova (Original)',
         subtitle: `Entrada Acústica · fs = ${(fase1.audio.sample_rate_hz / 1000).toFixed(1)} kHz · 8.0 s`,
-        src: `${assets.wav_original}?v=1.2`,
+        src: `${assets.wav_original}?v=2.0-billie`,
         accentClass: 'text-sky-400',
       },
       {
@@ -46,7 +49,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 02',
         title: 'Modulación AM-FC (TX)',
         subtitle: `Portadora fc = ${(fase2.am.carrier_freq_hz / 1000).toFixed(1)} kHz · μ = ${fase2.am.modulation_index_mu.toFixed(2)}`,
-        src: `${assets.wav_mod_am}?v=1.2`,
+        src: `${assets.wav_mod_am}?v=2.0-billie`,
         accentClass: 'text-amber-400',
       },
       {
@@ -54,7 +57,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 03',
         title: 'Modulación FM-WBFM (TX)',
         subtitle: `Portadora fc = ${(fase2.fm.carrier_freq_hz / 1000).toFixed(1)} kHz · β = ${fase2.fm.beta.toFixed(2)}`,
-        src: `${assets.wav_mod_fm}?v=1.2`,
+        src: `${assets.wav_mod_fm}?v=2.0-billie`,
         accentClass: 'text-purple-400',
       },
       {
@@ -62,7 +65,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 04',
         title: 'Modulación Digital 2-FSK (TX)',
         subtitle: `f0 = ${(fase2.fsk.f0_hz / 1000).toFixed(1)} kHz, f1 = ${(fase2.fsk.f1_hz / 1000).toFixed(1)} kHz · ${fase2.fsk.bit_rate_bps.toFixed(0)} bps`,
-        src: `${assets.wav_mod_fsk}?v=1.2`,
+        src: `${assets.wav_mod_fsk}?v=2.0-billie`,
         accentClass: 'text-pink-400',
       },
       {
@@ -70,7 +73,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 05',
         title: 'Modulación Digital PSK (BPSK)',
         subtitle: `Portadora fc = ${(fase2.psk?.carrier_freq_hz ?? 2000) / 1000} kHz · Salto de fase 180°`,
-        src: `${assets.wav_mod_psk || '/demo/modulada_psk.wav'}?v=1.2`,
+        src: `${assets.wav_mod_psk || '/demo/modulada_psk.wav'}?v=2.0-billie`,
         accentClass: 'text-cyan-400',
       },
       {
@@ -78,7 +81,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 06',
         title: 'Demodulación AM Coherente (RX)',
         subtitle: `Receptor sincrónico · SNR = ${fase3.am_coherent.snr_db.toFixed(2)} dB`,
-        src: `${assets.wav_demod_am_coherent}?v=1.2`,
+        src: `${assets.wav_demod_am_coherent}?v=2.0-billie`,
         accentClass: 'text-emerald-400',
       },
       {
@@ -86,7 +89,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 07',
         title: 'Demodulación AM Envolvente (RX)',
         subtitle: `Detector pico no lineal · SNR = ${fase3.am_envelope.snr_db.toFixed(2)} dB`,
-        src: `${assets.wav_demod_am_envelope}?v=1.2`,
+        src: `${assets.wav_demod_am_envelope}?v=2.0-billie`,
         accentClass: 'text-yellow-400',
       },
       {
@@ -94,7 +97,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 08',
         title: 'Demodulación FM Discriminador (RX)',
         subtitle: `Detector de cruces por cero · SNR = ${fase3.fm_discriminator.snr_db.toFixed(2)} dB`,
-        src: `${assets.wav_demod_fm}?v=1.2`,
+        src: `${assets.wav_demod_fm}?v=2.0-billie`,
         accentClass: 'text-indigo-400',
       },
       {
@@ -102,7 +105,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
         code: 'CH 09',
         title: 'Reconstrucción DAC Sinc Whittaker',
         subtitle: `Salida analógica final · SNR = ${fase4_5.dac_sinc.snr_db.toFixed(2)} dB · r = ${fase4_5.dac_sinc.pearson_corr.toFixed(4)}`,
-        src: `${assets.wav_reconstructed_sinc}?v=1.2`,
+        src: `${assets.wav_reconstructed_sinc}?v=2.0-billie`,
         accentClass: 'text-teal-400',
       },
     ],
@@ -148,14 +151,14 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
           <div className="lg:col-span-8 group relative rounded-2xl border border-(--hairline) bg-(--surface-elevated) p-3 overflow-hidden shadow-sm hover:border-(--hairline-hover) transition-all">
             <div className="relative aspect-16/9 w-full rounded-xl overflow-hidden bg-black/40">
               <OptimizedPicture
-                src={assets.fig_time_spectrum}
+                src={vAsset(assets.fig_time_spectrum)}
                 alt="Señal temporal y espectro de voz original"
                 className="w-full h-full object-contain"
               />
               <button
                 onClick={() =>
                   openLightbox(
-                    assets.fig_time_spectrum,
+                    vAsset(assets.fig_time_spectrum),
                     'Adquisición de Audio: Forma de Onda y Espectro FFT',
                     `fs = ${fase1.audio.sample_rate_hz} Hz, fmax = ${fase1.audio.f_max_effective_hz.toFixed(1)} Hz`
                   )
@@ -262,14 +265,14 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
           <div className="lg:col-span-8 group relative rounded-2xl border border-(--hairline) bg-(--surface-elevated) p-3 overflow-hidden shadow-sm hover:border-(--hairline-hover) transition-all">
             <div className="relative aspect-16/9 w-full rounded-xl overflow-hidden bg-black/40">
               <OptimizedPicture
-                src={exhibit2Plot === 'nqs' ? assets.fig_nqs : assets.fig_quantization}
+                src={vAsset(exhibit2Plot === 'nqs' ? assets.fig_nqs : assets.fig_quantization)}
                 alt={exhibit2Plot === 'nqs' ? 'Muestreo Nyquist-Shannon' : 'Cuantización PCM y Error de Ruido'}
                 className="w-full h-full object-contain"
               />
               <button
                 onClick={() =>
                   openLightbox(
-                    exhibit2Plot === 'nqs' ? assets.fig_nqs : assets.fig_quantization,
+                    vAsset(exhibit2Plot === 'nqs' ? assets.fig_nqs : assets.fig_quantization),
                     exhibit2Plot === 'nqs' ? 'Muestreo Nyquist-Shannon' : 'Cuantización PCM Uniforme (8 bits)',
                     exhibit2Plot === 'nqs'
                       ? `fs submuestreado = ${fase1.sampling_pcm.downsampled_rate_hz} Hz`
@@ -462,7 +465,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
               <div className="lg:col-span-6 group relative rounded-2xl border border-(--hairline) bg-(--surface-elevated) p-3 overflow-hidden shadow-sm hover:border-(--hairline-hover) transition-all">
                 <div className="relative aspect-16/9 w-full rounded-xl overflow-hidden bg-black/40">
                   <OptimizedPicture
-                    src={assets.fig_constellation_psk || '/demo/11_diagrama_constelacion_psk_v2.png'}
+                    src={vAsset(assets.fig_constellation_psk || '/demo/11_diagrama_constelacion_psk_v2.png')}
                     alt="Diagrama de constelación PSK y forma de onda"
                     className="w-full h-full object-contain"
                   />
@@ -520,7 +523,7 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
                         : rfPlot === 'translation'
                         ? assets.fig_spectrum_translation
                         : assets.fig_am_modes;
-                    openLightbox(currentSrc, `Análisis de Modulación RF: ${rfPlot.toUpperCase()}`);
+                    openLightbox(vAsset(currentSrc), `Análisis de Modulación RF: ${rfPlot.toUpperCase()}`);
                   }}
                   className="absolute top-3 right-3 p-2 rounded-lg bg-black/60 hover:bg-black/90 text-white backdrop-blur-md transition-opacity opacity-0 group-hover:opacity-100 focus:opacity-100"
                   aria-label="Ampliar gráfica de modulación RF"
@@ -555,14 +558,14 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
           <div className="lg:col-span-8 group relative rounded-2xl border border-(--hairline) bg-(--surface-elevated) p-3 overflow-hidden shadow-sm hover:border-(--hairline-hover) transition-all">
             <div className="relative aspect-16/9 w-full rounded-xl overflow-hidden bg-black/40">
               <OptimizedPicture
-                src={assets.fig_fidelity_comparison}
+                src={vAsset(assets.fig_fidelity_comparison)}
                 alt="Comparativa de fidelidad de reconstrucción DAC Sinc vs ZOH"
                 className="w-full h-full object-contain"
               />
               <button
                 onClick={() =>
                   openLightbox(
-                    assets.fig_fidelity_comparison,
+                    vAsset(assets.fig_fidelity_comparison),
                     'Comparativa de Fidelidad: Sinc vs ZOH',
                     `Sinc SNR: ${fase4_5.dac_sinc.snr_db.toFixed(2)} dB, ZOH SNR: ${fase4_5.dac_zoh.snr_db.toFixed(2)} dB`
                   )

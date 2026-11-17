@@ -127,7 +127,7 @@ def estimate_max_frequency(freqs: np.ndarray, mag_linear: np.ndarray, energy_thr
 
 
 def plot_time_and_frequency(signal: AudioSignal, save_path: Optional[str] = None,
-                            show: bool = False, title_prefix: str = "Señal de Audio Original") -> plt.Figure:
+                            show: bool = False, title_prefix: str = "Billie Bossa Nova (Billie Eilish)") -> plt.Figure:
     """
     Genera una visualización técnica con doble panel:
       1. Forma de onda en el dominio del tiempo s(t) con límites y nivel RMS.
@@ -146,47 +146,50 @@ def plot_time_and_frequency(signal: AudioSignal, save_path: Optional[str] = None
     freqs, _, mag_db = compute_spectrum(signal)
     t = signal.time_vector
 
-    fig, (ax_time, ax_freq) = plt.subplots(2, 1, figsize=(11, 7), constrained_layout=True)
-    fig.patch.set_facecolor('#0d1117')
+    fig, (ax_time, ax_freq) = plt.subplots(2, 1, figsize=(11, 7.5), constrained_layout=True)
+    fig.patch.set_facecolor('#090d16')
 
     # Configuración de estilos técnicos oscuros
     for ax in (ax_time, ax_freq):
-        ax.set_facecolor('#161b22')
-        ax.tick_params(colors='#c9d1d9', labelsize=9)
-        ax.grid(True, color='#30363d', linestyle='--', linewidth=0.7, alpha=0.8)
+        ax.set_facecolor('#111827')
+        ax.tick_params(colors='#94a3b8', labelsize=9)
+        ax.grid(True, color='#1e293b', linestyle='--', linewidth=0.7, alpha=0.85)
         for spine in ax.spines.values():
-            spine.set_color('#30363d')
+            spine.set_color('#1e293b')
 
     # --- PANEL 1: DOMINIO DEL TIEMPO ---
-    ax_time.plot(t, signal.samples, color='#58a6ff', linewidth=0.9, label='s(t) Amplitud Instantánea')
-    ax_time.axhline(props['rms_amplitude'], color='#3fb950', linestyle=':', linewidth=1.2,
-                   label=f"Nivel RMS (+{props['rms_amplitude']:.3f})")
-    ax_time.axhline(-props['rms_amplitude'], color='#3fb950', linestyle=':', linewidth=1.2,
-                   label=f"Nivel RMS (-{props['rms_amplitude']:.3f})")
-    ax_time.set_title(f"{title_prefix} - Dominio del Tiempo (fs = {signal.sample_rate:,} Hz | N = {signal.num_samples:,})",
-                      color='#f0f6fc', fontsize=12, fontweight='bold', pad=10)
-    ax_time.set_xlabel("Tiempo [segundos]", color='#c9d1d9', fontsize=10)
-    ax_time.set_ylabel("Amplitud Normalizada [-1.0, 1.0]", color='#c9d1d9', fontsize=10)
+    ax_time.fill_between(t, signal.samples, 0, color='#38bdf8', alpha=0.25)
+    ax_time.plot(t, signal.samples, color='#38bdf8', linewidth=0.6, label='s(t) Amplitud Acústica (Billie Bossa Nova)')
+    ax_time.axhline(props['rms_amplitude'], color='#34d399', linestyle=':', linewidth=1.3,
+                   label=f"Nivel RMS (+{props['rms_amplitude']:.3f} V)")
+    ax_time.axhline(-props['rms_amplitude'], color='#34d399', linestyle=':', linewidth=1.3,
+                   label=f"Nivel RMS (-{props['rms_amplitude']:.3f} V)")
+    ax_time.set_title(f"1. Forma de Onda Temporal: {title_prefix} (fs = {signal.sample_rate:,} Hz | {signal.duration:.1f} s)",
+                      color='#f8fafc', fontsize=11, fontweight='bold', pad=10)
+    ax_time.set_xlabel("Tiempo [segundos]", color='#cbd5e1', fontsize=9.5)
+    ax_time.set_ylabel("Amplitud Normalizada [-1.0, 1.0]", color='#cbd5e1', fontsize=9.5)
+    ax_time.set_xlim(0, signal.duration)
     ax_time.set_ylim(-1.05, 1.05)
-    ax_time.legend(facecolor='#21262d', edgecolor='#30363d', labelcolor='#f0f6fc', loc='upper right', fontsize=8)
+    ax_time.legend(facecolor='#1e293b', edgecolor='#334155', labelcolor='#f8fafc', loc='upper right', fontsize=8.5)
 
     # --- PANEL 2: DOMINIO DE LA FRECUENCIA ---
-    ax_freq.plot(freqs, mag_db, color='#bc8cff', linewidth=1.0, label='Espectro Normalizado |S(f)|')
+    ax_freq.fill_between(freqs, mag_db, -65, color='#a855f7', alpha=0.18)
+    ax_freq.plot(freqs, mag_db, color='#c084fc', linewidth=0.8, label='Espectro Normalizado |S(f)|')
     f_max = props['f_max_effective_hz']
     f_nyq = props['f_nyquist_minimum_hz']
     
-    ax_freq.axvline(f_max, color='#f85149', linestyle='--', linewidth=1.4,
-                    label=f"f_max (99% energía) = {f_max:,.1f} Hz")
-    ax_freq.axvline(f_nyq, color='#d29922', linestyle='-.', linewidth=1.4,
+    ax_freq.axvline(f_max, color='#f87171', linestyle='--', linewidth=1.4,
+                    label=f"f_max (99% energía acústica) = {f_max:,.1f} Hz")
+    ax_freq.axvline(f_nyq, color='#fbbf24', linestyle='-.', linewidth=1.4,
                     label=f"Tasa Nyquist Requerida (2·f_max) = {f_nyq:,.1f} Hz")
     
-    ax_freq.set_title(f"Espectro de Magnitud Unilateral (Criterio Nyquist-Shannon: fs={signal.sample_rate:,} Hz)",
-                      color='#f0f6fc', fontsize=12, fontweight='bold', pad=10)
-    ax_freq.set_xlabel("Frecuencia [Hz]", color='#c9d1d9', fontsize=10)
-    ax_freq.set_ylabel("Magnitud Normalizada [dBFS]", color='#c9d1d9', fontsize=10)
+    ax_freq.set_title(f"2. Espectro de Magnitud Unilateral - Billie Bossa Nova (Transformada Rápida de Fourier)",
+                      color='#f8fafc', fontsize=11, fontweight='bold', pad=10)
+    ax_freq.set_xlabel("Frecuencia [Hz]", color='#cbd5e1', fontsize=9.5)
+    ax_freq.set_ylabel("Magnitud Normalizada [dBFS]", color='#cbd5e1', fontsize=9.5)
     ax_freq.set_ylim(-65, 5)
     ax_freq.set_xlim(0, min(props['sample_rate_hz'] / 2.0, max(8000.0, f_nyq * 1.5)))
-    ax_freq.legend(facecolor='#21262d', edgecolor='#30363d', labelcolor='#f0f6fc', loc='upper right', fontsize=8)
+    ax_freq.legend(facecolor='#1e293b', edgecolor='#334155', labelcolor='#f8fafc', loc='upper right', fontsize=8.5)
 
     if save_path:
         fig.savefig(save_path, dpi=300, facecolor=fig.get_facecolor(), edgecolor='none')

@@ -306,27 +306,30 @@ def plot_fidelity_comparison(original: AudioSignal, reconstructed: AudioSignal,
     err = x - y
 
     fig, (ax1, ax2, ax3) = plt.subplots(3, 1, figsize=(11, 11), constrained_layout=True)
-    fig.patch.set_facecolor('#0d1117')
+    fig.patch.set_facecolor('#090d16')
 
     for ax in (ax1, ax2, ax3):
-        ax.set_facecolor('#161b22')
-        ax.tick_params(colors='#c9d1d9')
-        ax.grid(True, color='#30363d', linestyle='--', alpha=0.7)
+        ax.set_facecolor('#111827')
+        ax.tick_params(colors='#94a3b8', labelsize=9)
+        ax.grid(True, color='#1e293b', linestyle='--', linewidth=0.7, alpha=0.85)
         for spine in ax.spines.values():
-            spine.set_color('#30363d')
+            spine.set_color('#1e293b')
 
     # Panel 1: Dominio del Tiempo
-    ax1.plot(t, x, color='#58a6ff', linewidth=1.1, label='x(t) Original')
-    ax1.plot(t, y, color='#3fb950', linewidth=1.0, linestyle='--', label='x_rec(t) Reconstruida')
-    ax1.plot(t, err, color='#f85149', linewidth=0.8, alpha=0.6, label='Error e(t) = x - x_rec')
+    ax1.fill_between(t, x, 0, color='#38bdf8', alpha=0.15)
+    ax1.plot(t, x, color='#38bdf8', linewidth=0.7, label='x(t) Billie Bossa Nova Original')
+    ax1.plot(t, y, color='#34d399', linewidth=0.7, linestyle='--', alpha=0.9, label='x_rec(t) Sinc DAC Whittaker-Shannon')
+    ax1.plot(t, err * 10.0, color='#f87171', linewidth=0.6, alpha=0.7, label='Error e(t) × 10 (Magnificado)')
     ax1.set_title(
-        f"Comparación Temporal: Original vs Reconstruida | "
-        f"SNR = {metrics.snr_db:.2f} dB | MSE = {metrics.mse:.5f} | Correlación = {metrics.pearson_corr:.4f}",
-        color='#f0f6fc', fontsize=11, fontweight='bold', pad=8
+        f"1. Comparación Temporal: Billie Bossa Nova vs Reconstrucción Sinc DAC | "
+        f"SNR = {metrics.snr_db:.2f} dB | MSE = {metrics.mse:.5f} | Pearson r = {metrics.pearson_corr:.5f}",
+        color='#f8fafc', fontsize=11, fontweight='bold', pad=10
     )
-    ax1.set_xlabel("Tiempo [s]", color='#c9d1d9')
-    ax1.set_ylabel("Amplitud Normalizada", color='#c9d1d9')
-    ax1.legend(facecolor='#21262d', edgecolor='#30363d', labelcolor='#f0f6fc', loc='upper right')
+    ax1.set_xlabel("Tiempo [segundos]", color='#cbd5e1', fontsize=9.5)
+    ax1.set_ylabel("Amplitud Normalizada", color='#cbd5e1', fontsize=9.5)
+    ax1.set_xlim(0, t[-1])
+    ax1.set_ylim(-1.05, 1.05)
+    ax1.legend(facecolor='#1e293b', edgecolor='#334155', labelcolor='#f8fafc', loc='upper right', fontsize=8.5)
 
     # Panel 2: Dominio de la Frecuencia
     fs = original.sample_rate
@@ -337,36 +340,38 @@ def plot_fidelity_comparison(original: AudioSignal, reconstructed: AudioSignal,
     db_x = 20 * np.log10(np.clip(fft_x / (np.max(fft_x) + 1e-12), 1e-5, 1.0))
     db_y = 20 * np.log10(np.clip(fft_y / (np.max(fft_y) + 1e-12), 1e-5, 1.0))
 
-    ax2.plot(freqs, db_x, color='#58a6ff', linewidth=1.1, label='Espectro Original |X(f)|')
-    ax2.plot(freqs, db_y, color='#3fb950', linewidth=1.0, linestyle='--', label='Espectro Reconstruido |Y(f)|')
-    ax2.set_title("Comparación Espectral (Fidelidad de Armónicos y Formantes Vocales)",
-                  color='#f0f6fc', fontsize=11, fontweight='bold', pad=8)
-    ax2.set_xlabel("Frecuencia [Hz]", color='#c9d1d9')
-    ax2.set_ylabel("Magnitud [dBFS]", color='#c9d1d9')
+    ax2.plot(freqs, db_x, color='#38bdf8', linewidth=0.85, label='Espectro Original |X(f)| (Billie Bossa Nova)')
+    ax2.plot(freqs, db_y, color='#34d399', linewidth=0.8, linestyle='--', label='Espectro Reconstruido |Y(f)| (Sinc DAC)')
+    ax2.set_title("2. Fidelidad Espectral: Billie Bossa Nova vs Sinc Whittaker-Shannon (FFT de Potencia)",
+                  color='#f8fafc', fontsize=11, fontweight='bold', pad=10)
+    ax2.set_xlabel("Frecuencia [Hz]", color='#cbd5e1', fontsize=9.5)
+    ax2.set_ylabel("Magnitud [dBFS]", color='#cbd5e1', fontsize=9.5)
     ax2.set_xlim(0, fs / 2.0)
-    ax2.legend(facecolor='#21262d', edgecolor='#30363d', labelcolor='#f0f6fc', loc='upper right')
+    ax2.set_ylim(-105, 5)
+    ax2.legend(facecolor='#1e293b', edgecolor='#334155', labelcolor='#f8fafc', loc='upper right', fontsize=8.5)
 
     # Panel 3: Histograma de residuos del error
     error_mean = float(np.mean(err)) if len(err) else 0.0
     error_std = float(np.std(err)) if len(err) else 0.0
     error_rms = float(np.sqrt(np.mean(err ** 2))) if len(err) else 0.0
-    ax3.hist(err, bins=60, color='#d2a8ff', alpha=0.85, edgecolor='#30363d')
-    ax3.axvline(error_mean, color='#f85149', linewidth=1.4,
-                label=f'Media = {error_mean:.2e}')
-    ax3.axvline(error_mean + error_std, color='#e3b341', linewidth=1.0,
-                linestyle='--', label=f'Media ± σ (σ = {error_std:.2e})')
-    ax3.axvline(error_mean - error_std, color='#e3b341', linewidth=1.0, linestyle='--')
+    ax3.hist(err, bins=80, color='#a855f7', alpha=0.85, edgecolor='#1e293b')
+    ax3.axvline(error_mean, color='#f87171', linewidth=1.4,
+                label=f'Media = {error_mean:.2e} V')
+    ax3.axvline(error_mean + error_std, color='#fbbf24', linewidth=1.0,
+                linestyle='--', label=f'Media ± σ (σ = {error_std:.2e} V)')
+    ax3.axvline(error_mean - error_std, color='#fbbf24', linewidth=1.0, linestyle='--')
     ax3.set_title(
-        f"Histograma de Residuos del Error | RMS = {error_rms:.3e} | "
+        f"3. Histograma de Residuos del Error DAC Sinc: Billie Bossa Nova | RMS = {error_rms:.3e} V | "
         f"Distorsión Espectral = {metrics.spectral_distortion_db:.2f} dB",
-        color='#f0f6fc', fontsize=11, fontweight='bold', pad=8
+        color='#f8fafc', fontsize=11, fontweight='bold', pad=10
     )
-    ax3.set_xlabel("Residuo e[n] = x[n] - x_rec[n]", color='#c9d1d9')
-    ax3.set_ylabel("Número de muestras", color='#c9d1d9')
-    ax3.legend(facecolor='#21262d', edgecolor='#30363d', labelcolor='#f0f6fc', loc='upper right')
+    ax3.set_xlabel("Residuo de Error e[n] = x[n] - x_rec[n] [V]", color='#cbd5e1', fontsize=9.5)
+    ax3.set_ylabel("Número de Muestras", color='#cbd5e1', fontsize=9.5)
+    ax3.legend(facecolor='#1e293b', edgecolor='#334155', labelcolor='#f8fafc', loc='upper right', fontsize=8.5)
 
     if save_path:
         fig.savefig(save_path, dpi=300, facecolor=fig.get_facecolor(), edgecolor='none')
+        print(f"[Grafica Fidelidad] Figura exportada a: {save_path}")
     if show:
         plt.show()
 

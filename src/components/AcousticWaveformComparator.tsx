@@ -78,13 +78,29 @@ export function AcousticWaveformComparator({
   const [viewMode, setViewMode] = useState<ViewMode>("waveform");
   const [sweeping, setSweeping] = useState(false);
   const [playingChannel, setPlayingChannel] = useState<"none" | "orig" | "rec">("none");
+  const [playProgress, setPlayProgress] = useState(0);
+  const [playTime, setPlayTime] = useState(0);
 
+  const playingChannelRef = useRef<"none" | "orig" | "rec">("none");
   const frameRef = useRef<HTMLDivElement | null>(null);
   const viewportRef = useRef<HTMLDivElement | null>(null);
   const readoutRef = useRef<HTMLSpanElement | null>(null);
 
   const audioOrigRef = useRef<HTMLAudioElement | null>(null);
   const audioRecRef = useRef<HTMLAudioElement | null>(null);
+
+  // URLs con cache-busting estricto para evitar reproducción de audios sintéticos residuales
+  const safeOrigUrl = useMemo(() => {
+    return originalAudioUrl.includes("?")
+      ? `${originalAudioUrl}&cb=v2`
+      : `${originalAudioUrl}?v=2.0-billie`;
+  }, [originalAudioUrl]);
+
+  const safeRecUrl = useMemo(() => {
+    return reconstructedAudioUrl.includes("?")
+      ? `${reconstructedAudioUrl}&cb=v2`
+      : `${reconstructedAudioUrl}?v=2.0-billie`;
+  }, [reconstructedAudioUrl]);
 
   const stateRef = useRef({
     split: 52,
@@ -136,8 +152,14 @@ export function AcousticWaveformComparator({
       frame.style.setProperty("--ry", `${s.tiltY.toFixed(2)}deg`);
     }
     if (readout) {
-      const leftPct = Math.round(s.split);
-      readout.textContent = `${leftPct}% Original / ${100 - leftPct}% Reconstruida Sinc`;
+      if (playingChannelRef.current === "rec") {
+        readout.textContent = `▶ Reproduciendo DAC Sinc (Billie Bossa Nova)`;
+      } else if (playingChannelRef.current === "orig") {
+        readout.textContent = `▶ Reproduciendo Audio Original (Billie Bossa Nova)`;
+      } else {
+        const leftPct = Math.round(s.split);
+        readout.textContent = `${leftPct}% Original / ${100 - leftPct}% Reconstruida Sinc`;
+      }
     }
   }, []);
 
@@ -146,8 +168,29 @@ export function AcousticWaveformComparator({
 
     const tick = (now: number) => {
       const s = stateRef.current;
+      const isAudioActive = playingChannelRef.current !== "none";
 
-      if (s.sweeping) {
+      if (isAudioActive && !s.dragging) {
+        const activeAudio =
+          playingChannelRef.current === "rec" ? audioRecRef.current : audioOrigRef.current;
+        if (activeAudio && activeAudio.duration > 0 && !activeAudio.paused) {
+          const cur = activeAudio.currentTime;
+          const dur = activeAudio.duration || durationSec || 8.0;
+          const p = Math.max(0, Math.min(1, cur / dur));
+          // Barrido progresivo continuo en paralelo a lo largo de la onda
+          const pct = 4 + p * 92;
+          s.targetSplit = pct;
+          s.split = pct;
+          setPlayProgress(p);
+          setPlayTime(cur);
+
+          if (readoutRef.current) {
+            const chLabel =
+              playingChannelRef.current === "rec" ? "DAC Sinc (Whittaker)" : "Billie Bossa Nova Original";
+            readoutRef.current.textContent = `▶ ${chLabel}: ${cur.toFixed(1)}s / ${dur.toFixed(1)}s [${Math.round(p * 100)}%]`;
+          }
+        }
+      } else if (s.sweeping) {
         if (s.sweepStart === 0) s.sweepStart = now;
         const elapsed = (now - s.sweepStart) / 1000;
         const duration = 2.4;
@@ -166,13 +209,16 @@ export function AcousticWaveformComparator({
       const dTx = s.targetTiltX - s.tiltX;
       const dTy = s.targetTiltY - s.tiltY;
 
-      s.split += dSplit * 0.24;
+      if (!isAudioActive) {
+        s.split += dSplit * 0.24;
+      }
       s.tiltX += dTx * 0.14;
       s.tiltY += dTy * 0.14;
 
       applyVars();
 
       const settled =
+        !isAudioActive &&
         !s.sweeping &&
         !s.dragging &&
         Math.abs(dSplit) < 0.04 &&
@@ -192,7 +238,7 @@ export function AcousticWaveformComparator({
     };
 
     rafRef.current = window.requestAnimationFrame(tick);
-  }, [applyVars]);
+  }, [applyVars, durationSec]);
 
   useEffect(() => {
     applyVars();
@@ -211,16 +257,25 @@ export function AcousticWaveformComparator({
     const pct = ((clientX - rect.left) / rect.width) * 100;
     const clamped = Math.max(4, Math.min(96, pct));
     stateRef.current.targetSplit = clamped;
-    if (stateRef.current.dragging) {
-      stateRef.current.split = clamped;
-      applyVars();
-    } else {
-      startLoop();
+    stateRef.current.split = clamped;
+
+    // Si hay audio reproduciéndose, permitir scrubbing táctil directo
+    if (playingChannelRef.current !== "none") {
+      const activeAudio =
+        playingChannelRef.current === "rec" ? audioRecRef.current : audioOrigRef.current;
+      if (activeAudio && activeAudio.duration > 0) {
+        const norm = Math.max(0, Math.min(1, (clamped - 4) / 92));
+        activeAudio.currentTime = norm * activeAudio.duration;
+        setPlayProgress(norm);
+        setPlayTime(activeAudio.currentTime);
+      }
     }
+
+    applyVars();
+    startLoop();
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    // Si el evento proviene de un botón de reproducción o control, no capturar arrastre
     if ((e.target as HTMLElement).closest("button")) {
       return;
     }
@@ -268,6 +323,15 @@ export function AcousticWaveformComparator({
     startLoop();
   };
 
+  const handleAudioEnded = () => {
+    setPlayingChannel("none");
+    playingChannelRef.current = "none";
+    setPlayProgress(0);
+    setPlayTime(0);
+    stateRef.current.targetSplit = 52;
+    startLoop();
+  };
+
   const toggleAudio = (channel: "orig" | "rec") => {
     if (channel === "orig") {
       if (audioRecRef.current) {
@@ -277,14 +341,25 @@ export function AcousticWaveformComparator({
         if (playingChannel === "orig") {
           audioOrigRef.current.pause();
           setPlayingChannel("none");
+          playingChannelRef.current = "none";
+          stateRef.current.targetSplit = 52;
+          startLoop();
         } else {
           audioOrigRef.current.currentTime = 0;
           audioOrigRef.current
             .play()
-            .then(() => setPlayingChannel("orig"))
+            .then(() => {
+              setPlayingChannel("orig");
+              playingChannelRef.current = "orig";
+              stateRef.current.split = 4;
+              stateRef.current.targetSplit = 4;
+              applyVars();
+              startLoop();
+            })
             .catch((err) => {
               console.warn("Reproducción no iniciada:", err);
               setPlayingChannel("none");
+              playingChannelRef.current = "none";
             });
         }
       }
@@ -296,14 +371,25 @@ export function AcousticWaveformComparator({
         if (playingChannel === "rec") {
           audioRecRef.current.pause();
           setPlayingChannel("none");
+          playingChannelRef.current = "none";
+          stateRef.current.targetSplit = 52;
+          startLoop();
         } else {
           audioRecRef.current.currentTime = 0;
           audioRecRef.current
             .play()
-            .then(() => setPlayingChannel("rec"))
+            .then(() => {
+              setPlayingChannel("rec");
+              playingChannelRef.current = "rec";
+              stateRef.current.split = 4;
+              stateRef.current.targetSplit = 4;
+              applyVars();
+              startLoop();
+            })
             .catch((err) => {
               console.warn("Reproducción DAC no iniciada:", err);
               setPlayingChannel("none");
+              playingChannelRef.current = "none";
             });
         }
       }
@@ -554,27 +640,76 @@ export function AcousticWaveformComparator({
             style={{ left: "var(--split, 52%)" }}
             className="pointer-events-none absolute inset-y-0 -ml-[1px] flex w-0 items-center justify-center will-change-[left]"
           >
-            <div className="absolute inset-y-0 w-[2px] bg-white/70 shadow-[0_0_12px_rgba(255,255,255,0.8)]" />
-            <div className="z-30 flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-zinc-950/95 shadow-xl backdrop-blur-md">
-              <Activity className="h-3.5 w-3.5 text-sky-400" />
+            <div
+              className={`absolute inset-y-0 w-[2px] transition-colors duration-150 ${
+                playingChannel === "rec"
+                  ? "bg-emerald-400 shadow-[0_0_14px_rgba(52,211,153,1)]"
+                  : playingChannel === "orig"
+                  ? "bg-sky-400 shadow-[0_0_14px_rgba(56,189,248,1)]"
+                  : "bg-white/70 shadow-[0_0_12px_rgba(255,255,255,0.8)]"
+              }`}
+            />
+
+            {/* Playhead time indicator tag while active */}
+            {playingChannel !== "none" && (
+              <div className="absolute -top-7 -translate-x-1/2 flex items-center gap-1.5 rounded-full bg-zinc-950/95 border border-white/20 px-2 py-0.5 text-[9px] font-mono shadow-xl backdrop-blur-md whitespace-nowrap">
+                <span
+                  className={`w-1.5 h-1.5 rounded-full animate-ping ${
+                    playingChannel === "rec" ? "bg-emerald-400" : "bg-sky-400"
+                  }`}
+                />
+                <span className={playingChannel === "rec" ? "text-emerald-300" : "text-sky-300"}>
+                  {playTime.toFixed(1)}s / {durationSec.toFixed(1)}s
+                </span>
+              </div>
+            )}
+
+            <div
+              className={`z-30 flex h-8 w-8 items-center justify-center rounded-full border bg-zinc-950/95 shadow-xl backdrop-blur-md transition-colors duration-150 ${
+                playingChannel === "rec"
+                  ? "border-emerald-400/80 text-emerald-400 shadow-emerald-500/20"
+                  : playingChannel === "orig"
+                  ? "border-sky-400/80 text-sky-400 shadow-sky-500/20"
+                  : "border-white/60 text-sky-400"
+              }`}
+            >
+              <Activity className="h-3.5 w-3.5" />
             </div>
+          </div>
+
+          {/* Real-time playback progress track */}
+          <div className="pointer-events-none absolute bottom-0 left-0 right-0 h-1 bg-white/10 z-20 overflow-hidden">
+            <div
+              style={{ width: `${playProgress * 100}%` }}
+              className={`h-full transition-all duration-75 ${
+                playingChannel === "rec"
+                  ? "bg-emerald-400 shadow-[0_0_10px_rgba(52,211,153,0.8)]"
+                  : "bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.8)]"
+              }`}
+            />
           </div>
         </div>
 
-        {/* Audio Elements Sync */}
+        {/* Audio Elements Sync (Forced cache-busting v2.0) */}
         <audio
           ref={audioOrigRef}
-          src={originalAudioUrl}
+          src={safeOrigUrl}
           preload="auto"
-          onEnded={() => setPlayingChannel("none")}
-          onError={() => setPlayingChannel("none")}
+          onEnded={handleAudioEnded}
+          onError={() => {
+            setPlayingChannel("none");
+            playingChannelRef.current = "none";
+          }}
         />
         <audio
           ref={audioRecRef}
-          src={reconstructedAudioUrl}
+          src={safeRecUrl}
           preload="auto"
-          onEnded={() => setPlayingChannel("none")}
-          onError={() => setPlayingChannel("none")}
+          onEnded={handleAudioEnded}
+          onError={() => {
+            setPlayingChannel("none");
+            playingChannelRef.current = "none";
+          }}
         />
       </div>
     </div>

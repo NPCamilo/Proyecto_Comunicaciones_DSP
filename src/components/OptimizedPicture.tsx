@@ -11,10 +11,11 @@ interface OptimizedPictureProps {
 }
 
 export function toWebpSrc(src: string): string | null {
-  if (!src || src.startsWith("data:") || src.endsWith(".svg") || src.endsWith(".webp")) {
+  if (!src || src.startsWith("data:") || src.includes(".svg") || src.includes(".webp")) {
     return null;
   }
-  return src.replace(/\.png$/i, ".webp");
+  // Reemplaza .png por .webp preservando parámetros de consulta (e.g. ?v=2.0)
+  return src.replace(/\.png(\?.*)?$/i, (_, query) => `.webp${query || ""}`);
 }
 
 export function OptimizedPicture({

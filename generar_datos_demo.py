@@ -147,7 +147,7 @@ def generate_canonical_demo_data():
 
     print("[Fase 1] Generando gráficas de espectro, estudio NQS y cuantización...")
     plot_time_and_frequency(signal, save_path=str(out_dir / "01_analisis_temporal_espectral.png"), show=False)
-    plot_time_and_frequency(signal, save_path=str(out_dir / "01_analisis_temporal_espectral_v2.png"), show=False)
+    plot_time_and_frequency(signal, save_path=str(out_dir / "01_analisis_temporal_espectral_billie_v2.png"), show=False)
     plot_sampling_nqs_study(signal, save_path=str(out_dir / "02_estudio_muestreo_nqs.png"), show=False)
     plot_sampling_nqs_study(signal, save_path=str(out_dir / "02_estudio_muestreo_nqs_v2.png"), show=False)
     plot_quantization_analysis(signal, q_res, save_path=str(out_dir / "03_cuantizacion_8bits_ruido.png"), show=False)
@@ -403,7 +403,10 @@ def generate_canonical_demo_data():
     metrics_zoh = rec_zoh.evaluate_fidelity(signal, reconstructed_zoh)
 
     plot_fidelity_comparison(signal, reconstructed_sinc, metrics_sinc, save_path=str(out_dir / "pipeline_comparacion_fidelidad.png"), show=False)
+    plot_fidelity_comparison(signal, reconstructed_sinc, metrics_sinc, save_path=str(out_dir / "pipeline_comparacion_fidelidad_billie_v2.png"), show=False)
     save_wav(str(out_dir / "pipeline_audio_reconstruido.wav"), reconstructed_sinc)
+    save_wav(str(out_dir / "pipeline_audio_reconstruido_billie_v2.wav"), reconstructed_sinc)
+    save_wav(str(out_dir / "voz_original_billie_v2.wav"), signal)
 
     fase4_5_data = {
         "dac_sinc": {
@@ -426,12 +429,19 @@ def generate_canonical_demo_data():
         }
     }
 
-    # 5. Formas de onda acústicas reales para el Hero Comparator A/B (140 puntos reales)
+    # 5. Formas de onda acústicas reales para el Hero Comparator A/B (140 puntos reales con envolvente pico firmada)
     N_points = 140
-    step_macro = len(signal.samples) / N_points
-    indices_macro = [int(i * step_macro) for i in range(N_points)]
-    macro_orig = [round(float(signal.samples[idx]), 4) for idx in indices_macro]
-    macro_rec = [round(float(reconstructed_sinc.samples[idx]), 4) for idx in indices_macro]
+    chunk_size = len(signal.samples) // N_points
+    macro_orig = []
+    macro_rec = []
+    for i in range(N_points):
+        start = i * chunk_size
+        end = (i + 1) * chunk_size if i < N_points - 1 else len(signal.samples)
+        chunk_o = signal.samples[start:end]
+        chunk_r = reconstructed_sinc.samples[start:end]
+        idx_peak = int(np.argmax(np.abs(chunk_o)))
+        macro_orig.append(round(float(chunk_o[idx_peak]), 4))
+        macro_rec.append(round(float(chunk_r[idx_peak]), 4))
 
     # Transiente real (20 ms en ventana acústica activa)
     window_samples_trans = int(signal.sample_rate * 0.020)
@@ -449,7 +459,7 @@ def generate_canonical_demo_data():
     # 6. Mapeo de artefactos para consumo frontend
     assets = {
         # Audio tracks
-        "wav_original": "/demo/voz_original.wav",
+        "wav_original": "/demo/voz_original_billie_v2.wav",
         "wav_mod_am": "/demo/modulada_am.wav",
         "wav_mod_fm": "/demo/modulada_fm.wav",
         "wav_mod_fsk": "/demo/modulada_fsk.wav",
@@ -457,9 +467,9 @@ def generate_canonical_demo_data():
         "wav_demod_am_coherent": "/demo/demodulada_am_coherente.wav",
         "wav_demod_am_envelope": "/demo/demodulada_am_envolvente.wav",
         "wav_demod_fm": "/demo/demodulada_fm.wav",
-        "wav_reconstructed_sinc": "/demo/pipeline_audio_reconstruido.wav",
+        "wav_reconstructed_sinc": "/demo/pipeline_audio_reconstruido_billie_v2.wav",
         # Figures (PNG with automatic WebP alternative)
-        "fig_time_spectrum": "/demo/01_analisis_temporal_espectral.png",
+        "fig_time_spectrum": "/demo/01_analisis_temporal_espectral_billie_v2.png",
         "fig_nqs": "/demo/02_estudio_muestreo_nqs_v2.png",
         "fig_quantization": "/demo/03_cuantizacion_8bits_ruido_v2.png",
         "fig_mod_am": "/demo/04_modulacion_am_espectro.png",
@@ -471,7 +481,7 @@ def generate_canonical_demo_data():
         "fig_am_modes": "/demo/09_comparativa_modos_am_coherente_vs_envolvente.png",
         "fig_demod_fsk": "/demo/10_demodulacion_digital_fsk_correlacion.png",
         "fig_constellation_psk": "/demo/11_diagrama_constelacion_psk_v2.png",
-        "fig_fidelity_comparison": "/demo/pipeline_comparacion_fidelidad.png",
+        "fig_fidelity_comparison": "/demo/pipeline_comparacion_fidelidad_billie_v2.png",
         # Raw streams
         "bin_stream": "/demo/trama_digital_8bits.bin",
         "json_metadata": "/demo/trama_digital_8bits_metadata.json",
