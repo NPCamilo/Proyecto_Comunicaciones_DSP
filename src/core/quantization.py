@@ -215,26 +215,42 @@ def plot_sampling_nqs_study(signal: AudioSignal, save_path: Optional[str] = None
     t_sub_nyq, x_sub_nyq, fs_nyq = simulate_sampling_nqs(signal, downsample_factor=factor_nyquist)
     t_sub_alias, x_sub_alias, fs_alias = simulate_sampling_nqs(signal, downsample_factor=factor_aliased)
 
-    # Ventana de visualización microscópica (primeros 15 ms para apreciar las muestras discretas)
-    zoom_ms = 15.0
-    zoom_s = zoom_ms / 1000.0
-    mask_orig = signal.time_vector <= zoom_s
-    mask_nyq = t_sub_nyq <= zoom_s
-    mask_alias = t_sub_alias <= zoom_s
+    # Ventana de visualización microscópica (20 ms en segmento de voz activo para apreciar
+    # las muestras discretas sin caer en silencios iniciales planos en 0.00 V).
+    window_samples = max(10, int(signal.sample_rate * 0.020))
+    step_search = max(1, int(signal.sample_rate * 0.005))
+    abs_samples = np.abs(signal.samples)
+    if len(abs_samples) > window_samples:
+        energies = [np.mean(abs_samples[i:i + window_samples])
+                    for i in range(0, len(abs_samples) - window_samples, step_search)]
+        best_start_idx = int(np.argmax(energies)) * step_search if len(energies) > 0 else 0
+    else:
+        best_start_idx = 0
+
+    t_start = float(signal.time_vector[best_start_idx])
+    zoom_s = 0.020  # 20 ms
+    t_end = t_start + zoom_s
+
+    mask_orig = (signal.time_vector >= t_start) & (signal.time_vector <= t_end)
+    mask_nyq = (t_sub_nyq >= t_start) & (t_sub_nyq <= t_end)
+    mask_alias = (t_sub_alias >= t_start) & (t_sub_alias <= t_end)
 
     fig, axes = plt.subplots(3, 1, figsize=(11, 9), constrained_layout=True)
     fig.patch.set_facecolor('#0d1117')
 
+    t_orig_rel = (signal.time_vector[mask_orig] - t_start) * 1000.0
+    x_orig_win = signal.samples[mask_orig]
+
     configs = [
-        (axes[0], signal.time_vector[mask_orig], signal.samples[mask_orig], '#58a6ff',
-         f"1. Sobremuestreo (Señal Continua Original: fs = {fs_orig:,} Hz > 2·f_max)",
-         'Señal Continua x(t)'),
-        (axes[1], t_sub_nyq[mask_nyq], x_sub_nyq[mask_nyq], '#d29922',
+        (axes[0], t_orig_rel, x_orig_win, '#58a6ff',
+         f"1. Sobremuestreo (Señal Continua Original: fs = {fs_orig:,} Hz >> 2·f_max)",
+         'Señal Continua x(t) (Sin Aliasing)'),
+        (axes[1], (t_sub_nyq[mask_nyq] - t_start) * 1000.0, x_sub_nyq[mask_nyq], '#d29922',
          f"2. Muestreo en Rango de Nyquist (fs' = {fs_nyq:,} Hz ≈ 2·f_max)",
-         f"Muestras Discretas x[n] (Ts = {1000.0/fs_nyq:.2f} ms)"),
-        (axes[2], t_sub_alias[mask_alias], x_sub_alias[mask_alias], '#f85149',
-         f"3. Submuestreo / Violación NQS (fs'' = {fs_alias:,} Hz << 2·f_max) -> ALIASING",
-         f"Muestras Discretas (Ts = {1000.0/fs_alias:.2f} ms)")
+         f"Muestras Discretas x[n] (Ts = {1000.0/fs_nyq:.2f} ms, Criterio Cumplido)"),
+        (axes[2], (t_sub_alias[mask_alias] - t_start) * 1000.0, x_sub_alias[mask_alias], '#f85149',
+         f"3. Submuestreo Severo / Violación NQS (fs'' = {fs_alias:,} Hz << 2·f_max) -> ALIASING",
+         f"Muestras Discretas (Ts = {1000.0/fs_alias:.2f} ms, Distorsión Irreversible)")
     ]
 
     for ax, t_plot, x_plot, color, title, label_text in configs:
@@ -245,7 +261,7 @@ def plot_sampling_nqs_study(signal: AudioSignal, save_path: Optional[str] = None
             spine.set_color('#30363d')
             
         # Dibujar siempre la señal continua tenue de fondo para referencia
-        ax.plot(signal.time_vector[mask_orig] * 1000.0, signal.samples[mask_orig],
+        ax.plot(t_orig_rel, x_orig_win,
                 color='#8b949e', linewidth=0.8, alpha=0.4, label='x(t) Original')
 
         if ax == axes[0]:
@@ -291,11 +307,23 @@ def plot_quantization_analysis(signal: AudioSignal, stream: DigitalStream,
     v_min, v_max = stream.v_min, stream.v_max
     step_delta = (v_max - v_min) / (2 ** b - 1)
     
-    # Ventana corta para observar los escalones claramente (primeros 10 ms)
-    zoom_samples = min(int(signal.sample_rate * 0.010), len(signal.samples))
-    t_zoom = signal.time_vector[:zoom_samples] * 1000.0  # ms
-    x_orig = signal.samples[:zoom_samples]
-    x_quant = stream.reconstructed_levels[:zoom_samples]
+    # Ventana de 15 ms sobre fonema activo para observar con nitidez los escalones
+    # de cuantización y el error e[n] sin caer en silencios planos.
+    zoom_samples = min(int(signal.sample_rate * 0.015), len(signal.samples))
+    step_search = max(1, int(signal.sample_rate * 0.005))
+    abs_samples = np.abs(signal.samples)
+    if len(abs_samples) > zoom_samples:
+        energies = [np.mean(abs_samples[i:i + zoom_samples])
+                    for i in range(0, len(abs_samples) - zoom_samples, step_search)]
+        best_start = int(np.argmax(energies)) * step_search if len(energies) > 0 else 0
+    else:
+        best_start = 0
+
+    idx_end = best_start + zoom_samples
+    t_start_act = float(signal.time_vector[best_start])
+    t_zoom = (signal.time_vector[best_start:idx_end] - t_start_act) * 1000.0  # ms relativos
+    x_orig = signal.samples[best_start:idx_end]
+    x_quant = stream.reconstructed_levels[best_start:idx_end]
     error = x_orig - x_quant
 
     fig, (ax_quant, ax_err) = plt.subplots(2, 1, figsize=(11, 7), constrained_layout=True)

@@ -1,13 +1,12 @@
 "use client";
 
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Activity, Maximize2, Play, Sparkles, Volume2 } from "lucide-react";
-import { OptimizedPicture } from "./OptimizedPicture";
+import { Activity, Play, Sparkles, Volume2, Pause } from "lucide-react";
 
 interface AcousticWaveformComparatorProps {
   originalAudioUrl: string;
   reconstructedAudioUrl: string;
-  comparisonPlotUrl: string;
+  comparisonPlotUrl?: string;
   snrDb: number;
   pearsonCorr: number;
   sqnrDb: number;
@@ -16,10 +15,10 @@ interface AcousticWaveformComparatorProps {
   onInspectImage?: (src: string, title: string, caption?: string) => void;
 }
 
-type ViewMode = "waveform" | "transient" | "plot";
+type ViewMode = "waveform" | "transient";
 
-// Generador determinista de perfil de onda para simular transientes de voz real
-function generateAcousticProfile(points: number, phaseShift: number = 0, roughness: number = 0.05): number[] {
+// Generador determinista de perfil macro de onda (envolvente silábica completa)
+function generateMacroProfile(points: number, phaseShift: number = 0, roughness: number = 0.05): number[] {
   const profile: number[] = [];
   for (let i = 0; i < points; i++) {
     const t = i / points;
@@ -29,9 +28,33 @@ function generateAcousticProfile(points: number, phaseShift: number = 0, roughne
       Math.sin(t * 75.0 + phaseShift) * 0.55 +
       Math.sin(t * 165.0 - phaseShift * 1.5) * 0.32 +
       Math.sin(t * 310.0) * 0.13;
-    const quantizationJitter = (Math.sin(i * 12.3) * roughness);
+    const quantizationJitter = Math.sin(i * 12.3) * roughness;
     const value = Math.max(-0.95, Math.min(0.95, (formants + quantizationJitter) * syllableEnv));
     profile.push(value);
+  }
+  return profile;
+}
+
+// Generador de perfil micro transitorio (zoom microscópico de 20 ms sobre pulso glótico y lóbulos sinc)
+function generateTransientProfile(points: number, isReconstructed: boolean): number[] {
+  const profile: number[] = [];
+  for (let i = 0; i < points; i++) {
+    const t = (i / points) * 4.0 - 2.0; // de -2.0 a +2.0
+    // Función sinc central del pulso acústico Whittaker-Shannon
+    const piT = Math.PI * t * 3.4;
+    const sincCenter = Math.abs(piT) < 0.001 ? 1.0 : Math.sin(piT) / piT;
+    const formantRinging = Math.cos(t * 16.0) * 0.38 * Math.exp(-t * t * 1.6);
+    const glottalPulse = (sincCenter * 0.72 + formantRinging) * Math.exp(-Math.abs(t) * 0.85);
+
+    if (isReconstructed) {
+      // Reconstrucción Sinc DAC: lóbulos de Whittaker-Shannon y discretización
+      const sincLobes = Math.sin(t * 22.0) * 0.08 * Math.exp(-Math.abs(t) * 1.1);
+      const stepped = Math.round((glottalPulse + sincLobes) * 18.0) / 18.0;
+      profile.push(Math.max(-0.95, Math.min(0.95, stepped * 0.88 + (glottalPulse + sincLobes) * 0.12)));
+    } else {
+      // Onda continua pura analógica
+      profile.push(Math.max(-0.95, Math.min(0.95, glottalPulse)));
+    }
   }
   return profile;
 }
@@ -39,13 +62,11 @@ function generateAcousticProfile(points: number, phaseShift: number = 0, roughne
 export function AcousticWaveformComparator({
   originalAudioUrl,
   reconstructedAudioUrl,
-  comparisonPlotUrl,
   snrDb,
   pearsonCorr,
   sqnrDb,
   sampleRate,
   durationSec,
-  onInspectImage,
 }: AcousticWaveformComparatorProps) {
   const [viewMode, setViewMode] = useState<ViewMode>("waveform");
   const [sweeping, setSweeping] = useState(false);
@@ -72,10 +93,15 @@ export function AcousticWaveformComparator({
 
   const rafRef = useRef<number | null>(null);
 
-  // Perfiles de onda sintética de alta fidelidad para el visor vectorial
+  // Perfiles de onda macro (Onda Dual) y micro (Transiente sinc)
   const wavePoints = 140;
-  const originalWave = useMemo(() => generateAcousticProfile(wavePoints, 0.0, 0.0), []);
-  const reconstructedWave = useMemo(() => generateAcousticProfile(wavePoints, 0.08, 0.04), []);
+  const originalWaveMacro = useMemo(() => generateMacroProfile(wavePoints, 0.0, 0.0), []);
+  const reconstructedWaveMacro = useMemo(() => generateMacroProfile(wavePoints, 0.08, 0.04), []);
+  const originalWaveTransient = useMemo(() => generateTransientProfile(wavePoints, false), []);
+  const reconstructedWaveTransient = useMemo(() => generateTransientProfile(wavePoints, true), []);
+
+  const activeOrigWave = viewMode === "transient" ? originalWaveTransient : originalWaveMacro;
+  const activeRecWave = viewMode === "transient" ? reconstructedWaveTransient : reconstructedWaveMacro;
 
   const applyVars = useCallback(() => {
     const s = stateRef.current;
@@ -176,6 +202,10 @@ export function AcousticWaveformComparator({
   };
 
   const handlePointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    // Si el evento proviene de un botón de reproducción o control, no capturar arrastre
+    if ((e.target as HTMLElement).closest("button")) {
+      return;
+    }
     stateRef.current.sweeping = false;
     setSweeping(false);
     stateRef.current.dragging = true;
@@ -222,27 +252,41 @@ export function AcousticWaveformComparator({
 
   const toggleAudio = (channel: "orig" | "rec") => {
     if (channel === "orig") {
-      if (audioRecRef.current) audioRecRef.current.pause();
+      if (audioRecRef.current) {
+        audioRecRef.current.pause();
+      }
       if (audioOrigRef.current) {
         if (playingChannel === "orig") {
           audioOrigRef.current.pause();
           setPlayingChannel("none");
         } else {
           audioOrigRef.current.currentTime = 0;
-          audioOrigRef.current.play();
-          setPlayingChannel("orig");
+          audioOrigRef.current
+            .play()
+            .then(() => setPlayingChannel("orig"))
+            .catch((err) => {
+              console.warn("Reproducción no iniciada:", err);
+              setPlayingChannel("none");
+            });
         }
       }
     } else {
-      if (audioOrigRef.current) audioOrigRef.current.pause();
+      if (audioOrigRef.current) {
+        audioOrigRef.current.pause();
+      }
       if (audioRecRef.current) {
         if (playingChannel === "rec") {
           audioRecRef.current.pause();
           setPlayingChannel("none");
         } else {
           audioRecRef.current.currentTime = 0;
-          audioRecRef.current.play();
-          setPlayingChannel("rec");
+          audioRecRef.current
+            .play()
+            .then(() => setPlayingChannel("rec"))
+            .catch((err) => {
+              console.warn("Reproducción DAC no iniciada:", err);
+              setPlayingChannel("none");
+            });
         }
       }
     }
@@ -281,7 +325,7 @@ export function AcousticWaveformComparator({
         {/* Chassis Toolbar */}
         <div className="relative z-10 flex flex-wrap items-center justify-between gap-2 border-b border-(--hairline) bg-(--surface) px-3.5 py-2.5 sm:px-4">
           <div className="flex items-center gap-2">
-            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/85" />
+            <span className="h-2.5 w-2.5 rounded-full bg-emerald-500/85 animate-pulse" />
             <span className="font-mono text-xs font-semibold uppercase tracking-wider text-(--ink)">
               Comparador Acústico 120 FPS
             </span>
@@ -294,12 +338,12 @@ export function AcousticWaveformComparator({
           </div>
 
           <div className="flex items-center gap-1.5">
+            {/* Mode Selectors (Onda Dual vs Transiente) */}
             <div className="flex gap-1 rounded-lg border border-(--hairline) bg-(--surface-elevated) p-0.5">
               {(
                 [
                   { id: "waveform", label: "Onda Dual" },
                   { id: "transient", label: "Transiente" },
-                  { id: "plot", label: "Figura FFT" },
                 ] as const
               ).map((mode) => (
                 <button
@@ -308,7 +352,7 @@ export function AcousticWaveformComparator({
                   onClick={() => setViewMode(mode.id)}
                   className={`rounded-md px-2.5 py-1 font-mono text-[10px] transition ${
                     viewMode === mode.id
-                      ? "bg-sky-500 font-semibold text-zinc-950"
+                      ? "bg-sky-500 font-semibold text-zinc-950 shadow-sm"
                       : "text-(--ink-muted) hover:text-(--ink)"
                   }`}
                 >
@@ -349,153 +393,171 @@ export function AcousticWaveformComparator({
           style={{ touchAction: "none" }}
           className="relative h-[340px] w-full cursor-ew-resize select-none overflow-hidden bg-zinc-950 sm:h-[380px]"
         >
-          {viewMode === "plot" ? (
-            /* Modo 3: Figura Científica Matplotlib */
-            <div className="relative flex h-full w-full items-center justify-center p-3">
-              <OptimizedPicture
-                src={comparisonPlotUrl}
-                alt="Comparación espectral y temporal de fidelidad"
-                priority
-                className="h-full w-full object-contain"
-              />
+          {/* Canal B (Fondo base): Reconstrucción DAC Sinc */}
+          <div className="absolute inset-0 flex flex-col justify-between p-5 text-emerald-400">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-emerald-500" />
+                <span className="font-mono text-xs font-semibold text-emerald-400">
+                  CANAL B · Reconstrucción Sinc DAC
+                </span>
+                {viewMode === "transient" && (
+                  <span className="hidden sm:inline-block rounded bg-emerald-500/10 px-1.5 py-0.5 text-[9px] font-mono text-emerald-300 border border-emerald-500/20">
+                    Lóbulos Whittaker-Shannon
+                  </span>
+                )}
+              </div>
               <button
                 type="button"
-                onClick={() =>
-                  onInspectImage?.(
-                    comparisonPlotUrl,
-                    "Comparativa Temporal & Espectral (Fase 4)",
-                    `SNR = ${snrDb} dB · Pearson r = ${pearsonCorr}`
-                  )
-                }
-                className="absolute right-4 top-4 inline-flex items-center gap-1 rounded-full border border-white/20 bg-zinc-950/85 px-3 py-1 font-mono text-[10px] text-zinc-200"
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleAudio("rec");
+                }}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[10px] transition ${
+                  playingChannel === "rec"
+                    ? "border-emerald-400 bg-emerald-500/20 text-emerald-300 shadow-sm"
+                    : "border-white/10 bg-zinc-900/90 text-zinc-300 hover:border-emerald-500/50 hover:text-white"
+                }`}
               >
-                <Maximize2 className="h-3 w-3" /> Zoom
+                {playingChannel === "rec" ? (
+                  <>
+                    <Pause className="h-3 w-3 text-emerald-400" />
+                    <span>Pausar DAC</span>
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="h-3 w-3 text-emerald-400" />
+                    <span>Escuchar DAC</span>
+                  </>
+                )}
               </button>
             </div>
-          ) : (
-            /* Modo 1 y 2: Renderizador Vectorial de Onda Acústica con Split A/B */
-            <>
-              {/* Canal B (Fondo base): Reconstrucción DAC Sinc */}
-              <div className="absolute inset-0 flex flex-col justify-between p-5 text-emerald-400">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-emerald-500" />
-                    <span className="font-mono text-xs font-semibold text-emerald-400">
-                      CANAL B · Reconstrucción Sinc DAC
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleAudio("rec");
-                    }}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] transition ${
-                      playingChannel === "rec"
-                        ? "border-emerald-400 bg-emerald-500/20 text-emerald-300"
-                        : "border-white/10 bg-zinc-900/80 text-zinc-300 hover:border-emerald-500/50"
-                    }`}
-                  >
-                    <Volume2 className="h-3 w-3" />
-                    {playingChannel === "rec" ? "Pausar" : "Escuchar DAC"}
-                  </button>
-                </div>
 
-                {/* SVG Waveform Channel B */}
-                <div className="relative my-auto h-40 w-full">
-                  <svg
-                    viewBox="0 0 100 100"
-                    preserveAspectRatio="none"
-                    className="h-full w-full overflow-visible"
-                  >
-                    <polyline
-                      fill="none"
-                      stroke="rgba(16, 185, 129, 0.85)"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      points={makePoints(reconstructedWave)}
-                    />
-                  </svg>
-                </div>
+            {/* SVG Waveform Channel B */}
+            <div className="relative my-auto h-40 w-full">
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                className="h-full w-full overflow-visible"
+              >
+                <polyline
+                  fill="none"
+                  stroke="rgba(16, 185, 129, 0.9)"
+                  strokeWidth={viewMode === "transient" ? "2.0" : "1.6"}
+                  strokeLinecap="round"
+                  points={makePoints(activeRecWave)}
+                />
+              </svg>
+            </div>
 
-                <div className="flex items-center justify-between font-mono text-[10px] text-zinc-400">
-                  <span>Interpolación Whittaker-Shannon</span>
-                  <span className="text-emerald-400">SNR: {snrDb} dB · r: {pearsonCorr}</span>
-                </div>
+            <div className="flex items-center justify-between font-mono text-[10px] text-zinc-400">
+              <span>
+                {viewMode === "transient" ? "Zoom Micro-Transiente (20 ms)" : "Interpolación Whittaker-Shannon"}
+              </span>
+              <span className="text-emerald-400">SNR: {snrDb} dB · r: {pearsonCorr}</span>
+            </div>
+          </div>
+
+          {/* Canal A (Capa recortada): Voz Acústica Original */}
+          <div
+            style={{
+              clipPath:
+                "polygon(0 0, var(--split, 52%) 0, var(--split, 52%) 100%, 0 100%)",
+            }}
+            className="absolute inset-0 flex flex-col justify-between border-r border-sky-400 bg-zinc-950/95 p-5 text-sky-400 will-change-[clip-path]"
+          >
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <span className="h-2 w-2 rounded-full bg-sky-400" />
+                <span className="font-mono text-xs font-semibold text-sky-400">
+                  CANAL A · Señal de Voz Original
+                </span>
+                {viewMode === "transient" && (
+                  <span className="hidden sm:inline-block rounded bg-sky-500/10 px-1.5 py-0.5 text-[9px] font-mono text-sky-300 border border-sky-500/20">
+                    Respuesta Continua
+                  </span>
+                )}
               </div>
-
-              {/* Canal A (Capa recortada): Voz Acústica Original */}
-              <div
-                style={{
-                  clipPath:
-                    "polygon(0 0, var(--split, 52%) 0, var(--split, 52%) 100%, 0 100%)",
+              <button
+                type="button"
+                onPointerDown={(e) => e.stopPropagation()}
+                onMouseDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleAudio("orig");
                 }}
-                className="absolute inset-0 flex flex-col justify-between border-r border-sky-400 bg-zinc-950/95 p-5 text-sky-400 will-change-[clip-path]"
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[10px] transition ${
+                  playingChannel === "orig"
+                    ? "border-sky-400 bg-sky-500/20 text-sky-300 shadow-sm"
+                    : "border-white/10 bg-zinc-900/90 text-zinc-300 hover:border-sky-500/50 hover:text-white"
+                }`}
               >
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <span className="h-2 w-2 rounded-full bg-sky-400" />
-                    <span className="font-mono text-xs font-semibold text-sky-400">
-                      CANAL A · Señal de Voz Original
-                    </span>
-                  </div>
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleAudio("orig");
-                    }}
-                    className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 font-mono text-[10px] transition ${
-                      playingChannel === "orig"
-                        ? "border-sky-400 bg-sky-500/20 text-sky-300"
-                        : "border-white/10 bg-zinc-900/80 text-zinc-300 hover:border-sky-500/50"
-                    }`}
-                  >
-                    <Volume2 className="h-3 w-3" />
-                    {playingChannel === "orig" ? "Pausar" : "Escuchar Voz"}
-                  </button>
-                </div>
+                {playingChannel === "orig" ? (
+                  <>
+                    <Pause className="h-3 w-3 text-sky-400" />
+                    <span>Pausar Voz</span>
+                  </>
+                ) : (
+                  <>
+                    <Volume2 className="h-3 w-3 text-sky-400" />
+                    <span>Escuchar Voz</span>
+                  </>
+                )}
+              </button>
+            </div>
 
-                {/* SVG Waveform Channel A */}
-                <div className="relative my-auto h-40 w-full">
-                  <svg
-                    viewBox="0 0 100 100"
-                    preserveAspectRatio="none"
-                    className="h-full w-full overflow-visible"
-                  >
-                    <polyline
-                      fill="none"
-                      stroke="rgba(56, 189, 248, 0.95)"
-                      strokeWidth="1.6"
-                      strokeLinecap="round"
-                      points={makePoints(originalWave)}
-                    />
-                  </svg>
-                </div>
-
-                <div className="flex items-center justify-between font-mono text-[10px] text-zinc-400">
-                  <span>{sampleRate.toLocaleString()} Hz · {durationSec} s</span>
-                  <span className="text-sky-400">SQNR: {sqnrDb} dB (8 bits)</span>
-                </div>
-              </div>
-
-              {/* Physical Scrubber Handle Indicator */}
-              <div
-                style={{ left: "var(--split, 52%)" }}
-                className="pointer-events-none absolute inset-y-0 -ml-[1px] flex w-0 items-center justify-center will-change-[left]"
+            {/* SVG Waveform Channel A */}
+            <div className="relative my-auto h-40 w-full">
+              <svg
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+                className="h-full w-full overflow-visible"
               >
-                <div className="absolute inset-y-0 w-[2px] bg-white/70 shadow-[0_0_12px_rgba(255,255,255,0.8)]" />
-                <div className="z-30 flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-zinc-950/95 shadow-xl backdrop-blur-md">
-                  <Activity className="h-3.5 w-3.5 text-sky-400" />
-                </div>
-              </div>
-            </>
-          )}
+                <polyline
+                  fill="none"
+                  stroke="rgba(56, 189, 248, 0.95)"
+                  strokeWidth={viewMode === "transient" ? "2.0" : "1.6"}
+                  strokeLinecap="round"
+                  points={makePoints(activeOrigWave)}
+                />
+              </svg>
+            </div>
+
+            <div className="flex items-center justify-between font-mono text-[10px] text-zinc-400">
+              <span>{sampleRate.toLocaleString()} Hz · {durationSec} s</span>
+              <span className="text-sky-400">SQNR: {sqnrDb} dB (8 bits)</span>
+            </div>
+          </div>
+
+          {/* Physical Scrubber Handle Indicator */}
+          <div
+            style={{ left: "var(--split, 52%)" }}
+            className="pointer-events-none absolute inset-y-0 -ml-[1px] flex w-0 items-center justify-center will-change-[left]"
+          >
+            <div className="absolute inset-y-0 w-[2px] bg-white/70 shadow-[0_0_12px_rgba(255,255,255,0.8)]" />
+            <div className="z-30 flex h-8 w-8 items-center justify-center rounded-full border border-white/60 bg-zinc-950/95 shadow-xl backdrop-blur-md">
+              <Activity className="h-3.5 w-3.5 text-sky-400" />
+            </div>
+          </div>
         </div>
 
         {/* Audio Elements Sync */}
-        <audio ref={audioOrigRef} src={originalAudioUrl} preload="metadata" onEnded={() => setPlayingChannel("none")} />
-        <audio ref={audioRecRef} src={reconstructedAudioUrl} preload="metadata" onEnded={() => setPlayingChannel("none")} />
+        <audio
+          ref={audioOrigRef}
+          src={originalAudioUrl}
+          preload="auto"
+          onEnded={() => setPlayingChannel("none")}
+          onError={() => setPlayingChannel("none")}
+        />
+        <audio
+          ref={audioRecRef}
+          src={reconstructedAudioUrl}
+          preload="auto"
+          onEnded={() => setPlayingChannel("none")}
+          onError={() => setPlayingChannel("none")}
+        />
       </div>
     </div>
   );

@@ -9,6 +9,20 @@ const clashDisplay = localFont({
   weight: "200 700",
 });
 
+const spaceGrotesk = localFont({
+  src: "./fonts/SpaceGrotesk-Variable.woff2",
+  variable: "--font-space-grotesk",
+  display: "swap",
+  weight: "300 700",
+});
+
+const plusJakartaSans = localFont({
+  src: "./fonts/PlusJakartaSans-Variable.woff2",
+  variable: "--font-plus-jakarta",
+  display: "swap",
+  weight: "300 800",
+});
+
 const satoshi = localFont({
   src: "./fonts/Satoshi-Variable.woff2",
   variable: "--font-satoshi",
@@ -43,7 +57,7 @@ export default function RootLayout({
   return (
     <html
       lang="es"
-      className={`dark ${clashDisplay.variable} ${satoshi.variable} ${geistMono.variable}`}
+      className={`dark ${spaceGrotesk.variable} ${plusJakartaSans.variable} ${clashDisplay.variable} ${satoshi.variable} ${geistMono.variable}`}
       suppressHydrationWarning
     >
       <body className="min-h-screen bg-(--canvas) text-(--ink) antialiased selection:bg-sky-500/20 selection:text-sky-500">

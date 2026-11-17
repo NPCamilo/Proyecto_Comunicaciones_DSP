@@ -15,6 +15,7 @@ import {
   Music,
   CheckCircle2,
   Cpu,
+  Info,
 } from 'lucide-react';
 
 interface EditorialShowcaseProps {
@@ -314,6 +315,34 @@ export default function EditorialShowcase({ demoData }: EditorialShowcaseProps) 
               <div className="flex justify-between items-center text-xs font-mono">
                 <span className="text-(--ink-muted)">SQNR Experimental:</span>
                 <span className="text-emerald-400 font-semibold">{fase1.sampling_pcm.sqnr_empirical_db.toFixed(2)} dB</span>
+              </div>
+            </div>
+
+            {/* Pedagogical Explanation Card */}
+            <div className="p-5 rounded-2xl border border-(--hairline) bg-(--surface-elevated) space-y-3">
+              <span className="font-mono text-xs uppercase tracking-wider text-(--ink-muted) flex items-center gap-2">
+                <Info className="w-3.5 h-3.5 text-blue-400" />
+                Interpretación de los 3 Escenarios NQS
+              </span>
+              <div className="space-y-3 text-xs font-mono leading-relaxed">
+                <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
+                  <span className="text-sky-400 font-semibold block">1. Sobremuestreo (fs = 16 kHz):</span>
+                  <span className="text-[11px] text-zinc-300 block mt-0.5">
+                    Señal continua original en fonema vocal activo. Densidad temporal óptima para registrar armónicos sin distorsión.
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
+                  <span className="text-amber-400 font-semibold block">2. Muestreo Nyquist (fs ≈ 2·fmax):</span>
+                  <span className="text-[11px] text-zinc-300 block mt-0.5">
+                    Impulsos discretos espaciados al límite matemático exacto. La información se preserva al 100% para reconstrucción Sinc sin aliasing.
+                  </span>
+                </div>
+                <div className="p-2 rounded-lg bg-red-500/10 border border-red-500/20">
+                  <span className="text-red-400 font-semibold block">3. Submuestreo Severo (fs &lt;&lt; 2·fmax):</span>
+                  <span className="text-[11px] text-zinc-300 block mt-0.5">
+                    Violación del criterio. Las réplicas periódicas colisionan con la banda audible, generando aliasing e ininteligibilidad irreversible.
+                  </span>
+                </div>
               </div>
             </div>
           </div>
